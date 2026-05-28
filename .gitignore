@@ -1,0 +1,58 @@
+# === 依赖 ===
+node_modules/
+
+# === 构建产物 ===
+web/dist/
+server/dist/
+
+# === 环境变量和密钥 ===
+server/.env
+server/.env.local
+server/.env.*.local
+*.swp
+*.swo
+*~
+
+# === 数据库和用户数据 ===
+server/data/radio.db
+server/data/radio.db-shm
+server/data/radio.db-wal
+server/data/netease-cookie.txt
+server/data/taste.json
+server/data/routines.json
+server/data/mood-rules.json
+server/data/tts-cache/
+
+# === 根目录敏感数据 ===
+data/
+files/
+
+# === 日志 ===
+logs/
+*.log
+npm-debug.log*
+
+# === 系统文件 ===
+.DS_Store
+Thumbs.db
+
+# === IDE ===
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# === 临时文件 ===
+tmp/
+temp/
+*.tmp
+*.temp
+
+# === 开发计划（个人笔记，不上传）===
+docs/DEVELOPMENT_PLAN.md
+docs/VIDEO_GAP_SUPPLEMENT_PLAN.md
+docs/VIDEO_UI_REFACTOR_PLAN.md
+docs/v0/

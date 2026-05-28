@@ -1,0 +1,137 @@
+import db from '../stores/db';
+import type { Track } from '../types';
+import fs from 'fs';
+import path from 'path';
+
+/**
+ * 候选歌曲召回算法
+ * 从用户曲库中按评分公式召回候选歌曲
+ */
+
+interface RecallContext {
+  scene?: string;     // 场景：coding, working, relaxing...
+  mood?: string;      // 心情：专注, 放松, 高兴, 低落...
+  time?: string;      // 当前时间 HH:mm
+  weather?: string;   // 天气描述
+  limit?: number;     // 召回数量，默认 100
+}
+
+interface ScoredTrack {
+  track: Track;
+  score: number;
+  reason: string;
+}
+
+/**
+ * 召回候选歌曲
+ */
+export function recallCandidates(userId: number, ctx: RecallContext): ScoredTrack[] {
+  const limit = ctx.limit || 100;
+
+  // 获取所有歌曲
+  const tracks = db.prepare(`
+    SELECT * FROM radio_track WHERE user_id = ?
+  `).all(userId) as Track[];
+
+  // 加载心情规则
+  const moodRules = loadMoodRules();
+  const sceneRules = moodRules?.sceneRules || {};
+  const moodRule = moodRules?.moodRules?.[ctx.mood || ''] || null;
+
+  // 场景映射到心情
+  const effectiveMood = ctx.mood || sceneRules[ctx.scene || '']?.moodMapping || '';
+
+  // 评分
+  const scored: ScoredTrack[] = tracks.map(track => {
+    let score = 0;
+    const reasons: string[] = [];
+
+    // 1. 喜欢加分 (+30)
+    if (track.liked) {
+      score += 30;
+      reasons.push('喜欢');
+    }
+
+    // 2. 风格匹配 (+20)
+    if (moodRule && track.genre_tags) {
+      const tags = track.genre_tags.split(',').map(t => t.trim());
+      const matched = moodRule.preferredGenres.some((g: string) =>
+        tags.some(t => t.includes(g) || g.includes(t))
+      );
+      if (matched) {
+        score += 20;
+        reasons.push('风格匹配');
+      }
+    }
+
+    // 3. 心情匹配 (+20) — 基于标签
+    if (moodRule && track.mood_tags) {
+      const moods = track.mood_tags.split(',').map(t => t.trim());
+      const matched = moodRule.keywords?.some((k: string) =>
+        moods.some(m => m.includes(k) || k.includes(m))
+      );
+      if (matched) {
+        score += 20;
+        reasons.push('心情匹配');
+      }
+    }
+
+    // 4. 场景匹配 (+20) — 基于歌单来源
+    if (ctx.scene === 'coding' || ctx.scene === 'working') {
+      // 工作场景偏好说唱/纯音乐
+      if (track.genre_tags?.includes('说唱') || track.genre_tags?.includes('纯音乐')) {
+        score += 20;
+        reasons.push('工作场景匹配');
+      }
+    }
+
+    // 5. 最近播放扣分 (-10~-30)
+    // 简化：按 play_count 越高扣分越多
+    if (track.play_count > 10) {
+      score -= Math.min(30, track.play_count);
+      reasons.push('播放较多');
+    }
+
+    // 6. 跳过扣分 (-30)
+    if (track.skipped_count > 3) {
+      score -= 30;
+      reasons.push('经常跳过');
+    }
+
+    return {
+      track,
+      score,
+      reason: reasons.join(', ') || '默认',
+    };
+  });
+
+  // 排序并取 top N
+  scored.sort((a, b) => b.score - a.score);
+  return scored.slice(0, limit);
+}
+
+/**
+ * 加载心情规则
+ */
+function loadMoodRules(): any {
+  const rulesPath = path.resolve(__dirname, '../../data/mood-rules.json');
+  if (!fs.existsSync(rulesPath)) return null;
+  return JSON.parse(fs.readFileSync(rulesPath, 'utf-8'));
+}
+
+/**
+ * 为 Claude 准备候选歌曲摘要（精简字段，减少 token）
+ */
+export function formatCandidatesForClaude(scored: ScoredTrack[]) {
+  return scored.map(s => ({
+    trackId: s.track.id,
+    title: s.track.title,
+    artist: s.track.artist,
+    album: s.track.album,
+    tags: [
+      s.track.genre_tags,
+      s.track.mood_tags,
+    ].filter(Boolean).join(', ') || undefined,
+    liked: s.track.liked === 1,
+  }));
+}

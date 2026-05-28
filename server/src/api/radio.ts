@@ -1,0 +1,137 @@
+import { Router } from 'express';
+import { createRadioSession } from '../agent/radio';
+import { getSession, getSessionTracksWithDetail, updateTrackPlayStatus } from '../stores/session';
+import { incrementPlayCount, incrementSkipCount } from '../stores/track';
+import { autoUpdateProfile } from '../stores/profile';
+import { synthesizeSpeech, getTextHash } from '../services/tts';
+import { wsManager } from '../ws/manager';
+
+const router = Router();
+
+/**
+ * POST /api/radio/session/create — 创建电台会话
+ * Body: { scene?: string, mood?: string, extraPrompt?: string }
+ */
+router.post('/session/create', async (req, res) => {
+  try {
+    const { scene, mood, extraPrompt } = req.body;
+    const result = await createRadioSession({ scene, mood, extraPrompt });
+
+    // 先返回响应，不阻塞 TTS 生成
+    res.json({ code: 0, data: result });
+
+    // 异步生成 TTS 音频
+    generateTtsForSession(result.sessionId, result.say, result.tracks).catch(err => {
+      console.error('[TTS] 后台生成失败:', err.message);
+    });
+  } catch (err: any) {
+    console.error('创建电台失败:', err);
+    res.status(500).json({ code: 500, message: err.message || '创建电台失败' });
+  }
+});
+
+/**
+ * 异步生成会话的 TTS 音频
+ * 只对 say（开场白）和 segue（串场词）做 TTS
+ */
+async function generateTtsForSession(
+  sessionId: number,
+  say: string,
+  tracks: Array<{ trackId: number; segue: string }>
+) {
+  const textsToSynthesize: string[] = [];
+
+  // 收集需要合成的文本
+  if (say) textsToSynthesize.push(say);
+  for (const track of tracks) {
+    if (track.segue) textsToSynthesize.push(track.segue);
+  }
+
+  console.log(`[TTS] 开始生成 ${textsToSynthesize.length} 段语音...`);
+
+  // 逐个合成（避免并发过多）
+  const results: Array<{ text: string; hash: string; audioUrl: string }> = [];
+  for (const text of textsToSynthesize) {
+    try {
+      const filePath = await synthesizeSpeech(text);
+      if (filePath) {
+        results.push({
+          text,
+          hash: getTextHash(text),
+          audioUrl: `/api/tts/audio/${getTextHash(text)}`,
+        });
+      }
+    } catch {
+      // 单个失败不影响其他
+    }
+  }
+
+  // 通过 WebSocket 推送 TTS 就绪事件
+  if (results.length > 0) {
+    wsManager.broadcast(sessionId, {
+      type: 'TTS_READY',
+      data: { sessionId, ttsItems: results },
+    });
+    console.log(`[TTS] 已推送 ${results.length} 段语音到会话 #${sessionId}`);
+  }
+}
+
+/**
+ * GET /api/radio/session/:id/tracks — 刷新会话歌曲（获取最新播放地址）
+ */
+router.get('/session/:id/tracks', (req, res) => {
+  try {
+    const sessionId = Number(req.params.id);
+    const session = getSession(sessionId);
+    if (!session) {
+      return res.status(404).json({ code: 404, message: '会话不存在' });
+    }
+    const tracks = getSessionTracksWithDetail(sessionId);
+    res.json({ code: 0, data: tracks });
+  } catch (err: any) {
+    res.status(500).json({ code: 500, message: err.message });
+  }
+});
+
+/**
+ * POST /api/radio/playback/report — 播放行为上报
+ * Body: { sessionId: number, trackId: number, action: 'PLAY'|'SKIP'|'COMPLETE', playSeconds?: number }
+ */
+router.post('/playback/report', async (req, res) => {
+  try {
+    const { sessionId, trackId, action, playSeconds } = req.body;
+
+    if (!sessionId || !trackId || !action) {
+      res.status(400).json({ code: 400, message: '缺少必要参数' });
+      return;
+    }
+
+    // 更新会话队列中的播放状态
+    if (action === 'PLAY' || action === 'COMPLETE') {
+      updateTrackPlayStatus(sessionId, trackId, 'PLAYED');
+      incrementPlayCount(trackId);
+    } else if (action === 'SKIP') {
+      updateTrackPlayStatus(sessionId, trackId, 'SKIPPED');
+      incrementSkipCount(trackId);
+    }
+
+    // 自动更新用户画像
+    const session = getSession(sessionId);
+    if (session && (action === 'COMPLETE' || action === 'SKIP')) {
+      autoUpdateProfile(session.userId, trackId, action);
+    }
+
+    // 广播播放状态变更
+    wsManager.broadcast(sessionId, {
+      type: 'PLAYBACK_REPORT',
+      data: { sessionId, trackId, action },
+    });
+
+    res.json({ code: 0, data: { sessionId, trackId, action, playSeconds } });
+  } catch (err: any) {
+    console.error('播放上报失败:', err);
+    res.status(500).json({ code: 500, message: err.message || '播放上报失败' });
+  }
+});
+
+export default router;

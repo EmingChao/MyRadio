@@ -1,0 +1,32 @@
+{
+  "name": "my-radio-server",
+  "version": "1.0.0",
+  "description": "个人 AI 电台后端",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "db:init": "tsx src/stores/init-db.ts",
+    "db:import": "tsx src/scripts/import-netease.ts",
+    "netease:login": "tsx src/scripts/netease-login.ts",
+    "netease:fetch-urls": "tsx src/scripts/fetch-play-urls.ts",
+    "netease:fetch-urls:force": "tsx src/scripts/fetch-play-urls.ts --force"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.99.0",
+    "better-sqlite3": "^11.0.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.0",
+    "express": "^4.21.0",
+    "ws": "^8.16.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.0",
+    "@types/cors": "^2.8.0",
+    "@types/express": "^5.0.0",
+    "@types/ws": "^8.5.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.7.0"
+  }
+}
