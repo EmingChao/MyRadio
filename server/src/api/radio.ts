@@ -1,10 +1,11 @@
 import { Router } from 'express';
 import { createRadioSession } from '../agent/radio';
-import { getSession, getSessionTracksWithDetail, updateTrackPlayStatus } from '../stores/session';
+import { getSession, getRecentSession, getSessionTracksWithDetail, updateTrackPlayStatus } from '../stores/session';
 import { incrementPlayCount, incrementSkipCount } from '../stores/track';
 import { autoUpdateProfile } from '../stores/profile';
 import { synthesizeSpeech, getTextHash } from '../services/tts';
 import { wsManager } from '../ws/manager';
+import { getCurrentSceneAndMood } from '../services/daily-plan';
 
 const router = Router();
 
@@ -26,6 +27,26 @@ router.post('/session/create', async (req, res) => {
     });
   } catch (err: any) {
     console.error('创建电台失败:', err);
+    res.status(500).json({ code: 500, message: err.message || '创建电台失败' });
+  }
+});
+
+/**
+ * POST /api/radio/session/create-from-plan — 从当前计划时段创建会话
+ */
+router.post('/session/create-from-plan', async (req, res) => {
+  try {
+    const { scene, mood } = getCurrentSceneAndMood();
+    console.log(`[Radio] 从计划启动: scene=${scene}, mood=${mood}`);
+    const result = await createRadioSession({ scene, mood });
+
+    res.json({ code: 0, data: result });
+
+    generateTtsForSession(result.sessionId, result.say, result.tracks).catch(err => {
+      console.error('[TTS] 后台生成失败:', err.message);
+    });
+  } catch (err: any) {
+    console.error('从计划创建电台失败:', err);
     res.status(500).json({ code: 500, message: err.message || '创建电台失败' });
   }
 });
@@ -75,6 +96,34 @@ async function generateTtsForSession(
     console.log(`[TTS] 已推送 ${results.length} 段语音到会话 #${sessionId}`);
   }
 }
+
+/**
+ * GET /api/radio/now — 获取用户最近的会话（用于页面刷新恢复）
+ */
+router.get('/now', (_req, res) => {
+  try {
+    const userId = 443961717;
+    const session = getRecentSession(userId);
+    if (!session) {
+      return res.json({ code: 0, data: null });
+    }
+    const tracks = getSessionTracksWithDetail(session.id);
+    // SQLite 返回 snake_case 字段名
+    const s = session as any;
+    res.json({
+      code: 0,
+      data: {
+        sessionId: s.id,
+        sessionTitle: s.session_title || s.sessionTitle || '',
+        aiSummary: s.ai_summary || s.aiSummary || '',
+        say: '',
+        tracks,
+      },
+    });
+  } catch (err: any) {
+    res.status(500).json({ code: 500, message: err.message });
+  }
+});
 
 /**
  * GET /api/radio/session/:id/tracks — 刷新会话歌曲（获取最新播放地址）

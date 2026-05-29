@@ -20,6 +20,13 @@ export async function createRadioSession(params: {
   });
 }
 
+/** 从当前计划时段创建会话 */
+export async function createSessionFromPlan() {
+  return request('/radio/session/create-from-plan', {
+    method: 'POST',
+  });
+}
+
 /** 获取歌曲列表 */
 export async function getTrackList(params: {
   keyword?: string;
@@ -79,6 +86,11 @@ export async function getDailyPlan() {
   return request('/plan/today');
 }
 
+/** 获取当前会话（页面刷新恢复） */
+export async function getCurrentSession() {
+  return request('/radio/now');
+}
+
 /** 刷新会话歌曲（获取最新播放地址） */
 export async function refreshSessionTracks(sessionId: number) {
   return request(`/radio/session/${sessionId}/tracks`);
@@ -102,4 +114,64 @@ export async function checkNeteaseQr(key: string) {
 /** 触发获取播放地址 */
 export async function fetchNeteaseUrls() {
   return request('/netease/fetch-urls', { method: 'POST' });
+}
+
+/** 获取完整品味画像 */
+export async function getTasteProfile() {
+  return request('/taste/profile');
+}
+
+/** 更新品味字段 */
+export async function updateTasteProfile(field: string, value: any) {
+  return request('/taste/profile', {
+    method: 'PUT',
+    body: JSON.stringify({ field, value }),
+  });
+}
+
+/** 获取歌单列表 */
+export async function getTastePlaylists() {
+  return request('/taste/playlists');
+}
+
+/** 更新歌单记忆 */
+export async function updatePlaylistMemory(playlistId: number, memory: string) {
+  return request(`/taste/playlist/${playlistId}/memory`, {
+    method: 'PUT',
+    body: JSON.stringify({ memory }),
+  });
+}
+
+/** 获取设备列表 */
+export async function getDeviceList() {
+  return request('/device/list');
+}
+
+/** 切换默认设备 */
+export async function switchDeviceApi(deviceId: number) {
+  return request('/device/switch', {
+    method: 'POST',
+    body: JSON.stringify({ deviceId }),
+  });
+}
+
+/** 调节设备音量 */
+export async function setDeviceVolume(deviceId: number, volume: number) {
+  return request('/device/volume', {
+    method: 'POST',
+    body: JSON.stringify({ deviceId, volume }),
+  });
+}
+
+/** 发送播放指令到设备 */
+export async function sendDevicePlay(deviceId: number, trackUrl: string) {
+  return request('/device/play', {
+    method: 'POST',
+    body: JSON.stringify({ deviceId, trackUrl }),
+  });
+}
+
+/** 获取歌曲歌词 */
+export async function getTrackLyrics(trackId: number) {
+  return request(`/track/${trackId}/lyrics`);
 }

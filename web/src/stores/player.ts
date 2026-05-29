@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia';
 import { ref, computed, watch } from 'vue';
-import { reportPlayback, refreshSessionTracks } from '../api';
+import { reportPlayback, refreshSessionTracks, getCurrentSession } from '../api';
 
 export interface RadioTrack {
   trackId: number;
@@ -9,6 +9,7 @@ export interface RadioTrack {
   album: string | null;
   coverUrl: string | null;
   playUrl: string | null;
+  lyrics?: string;
   djScript: string;
   recommendReason: string;
   segue: string;
@@ -26,6 +27,13 @@ export interface TtsItem {
   text: string;
   hash: string;
   audioUrl: string;
+}
+
+export interface SlotInfo {
+  scene: string;
+  mood: string;
+  startTime: string;
+  endTime: string;
 }
 
 export const usePlayerStore = defineStore('player', () => {
@@ -50,6 +58,9 @@ export const usePlayerStore = defineStore('player', () => {
 
   // TTS 映射：text -> audioUrl
   const ttsMap = ref<Map<string, string>>(new Map());
+
+  // 时段切换通知
+  const slotChanged = ref<SlotInfo | null>(null);
 
   // 播放进度（秒）
   const currentTime = ref(0);
@@ -97,10 +108,11 @@ export const usePlayerStore = defineStore('player', () => {
     isPlaying.value = false;
   });
 
-  // TTS 播放结束，恢复音乐音量
+  // TTS 播放结束，渐升音乐音量
   ttsAudio.addEventListener('ended', () => {
-    djSpeaking.value = false;
-    audio.volume = 1.0;
+    fadeVolume(audio, 1.0, 800).then(() => {
+      djSpeaking.value = false;
+    });
   });
 
   // 切换歌曲时加载音频
@@ -213,17 +225,43 @@ export const usePlayerStore = defineStore('player', () => {
     }
   }
 
-  // 播放 TTS 音频（DJ 说话时压低音乐音量）
+  // 音量渐变工具函数
+  function fadeVolume(target: HTMLAudioElement, to: number, duration: number): Promise<void> {
+    return new Promise(resolve => {
+      const from = target.volume;
+      const diff = to - from;
+      if (Math.abs(diff) < 0.01) { target.volume = to; resolve(); return; }
+      const start = performance.now();
+      function step(now: number) {
+        const elapsed = now - start;
+        const progress = Math.min(elapsed / duration, 1);
+        // ease-out 曲线
+        const eased = 1 - Math.pow(1 - progress, 2);
+        target.volume = from + diff * eased;
+        if (progress < 1) {
+          requestAnimationFrame(step);
+        } else {
+          target.volume = to;
+          resolve();
+        }
+      }
+      requestAnimationFrame(step);
+    });
+  }
+
+  // 播放 TTS 音频（DJ 说话时渐降音乐音量）
   function playTts(text: string) {
     const url = ttsMap.value.get(text);
     if (!url) return;
 
     djSpeaking.value = true;
-    audio.volume = 0.2; // 压低到约 -12dB
-    ttsAudio.src = url;
-    ttsAudio.play().catch(() => {
-      djSpeaking.value = false;
-      audio.volume = 1.0;
+    // 先渐降音乐音量，再播放 TTS
+    fadeVolume(audio, 0.15, 600).then(() => {
+      ttsAudio.src = url;
+      ttsAudio.play().catch(() => {
+        djSpeaking.value = false;
+        fadeVolume(audio, 1.0, 400);
+      });
     });
   }
 
@@ -238,6 +276,37 @@ export const usePlayerStore = defineStore('player', () => {
     } catch {}
   }
 
+  // 恢复最近会话（页面刷新时调用）
+  async function restoreSession() {
+    try {
+      const res = await getCurrentSession();
+      if (res.code === 0 && res.data && res.data.tracks?.length > 0) {
+        session.value = {
+          sessionId: res.data.sessionId,
+          sessionTitle: res.data.sessionTitle,
+          aiSummary: res.data.aiSummary || '',
+          say: res.data.say || '',
+          tracks: res.data.tracks,
+        };
+        // 找到第一首 WAITING 的歌曲作为当前播放位置
+        const waitingIdx = res.data.tracks.findIndex((t: any) => t.playStatus === 'WAITING');
+        currentIndex.value = waitingIdx >= 0 ? waitingIdx : 0;
+      }
+    } catch {
+      // 静默失败
+    }
+  }
+
+  // 设置时段切换通知
+  function setSlotChanged(info: SlotInfo) {
+    slotChanged.value = info;
+  }
+
+  // 清除时段切换通知
+  function clearSlotChanged() {
+    slotChanged.value = null;
+  }
+
   // 清理会话
   function clearSession() {
     audio.pause();
@@ -248,6 +317,9 @@ export const usePlayerStore = defineStore('player', () => {
     currentTime.value = 0;
     duration.value = 0;
   }
+
+  // 初始化时自动恢复最近会话
+  restoreSession();
 
   return {
     session,
@@ -260,6 +332,7 @@ export const usePlayerStore = defineStore('player', () => {
     currentTrack,
     trackCount,
     ttsMap,
+    slotChanged,
     setSession,
     next,
     prev,
@@ -271,7 +344,10 @@ export const usePlayerStore = defineStore('player', () => {
     setTtsItems,
     playTts,
     refreshTracks,
+    restoreSession,
     clearSession,
+    setSlotChanged,
+    clearSlotChanged,
     audio,
   };
 });

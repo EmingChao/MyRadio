@@ -4,7 +4,7 @@ import Anthropic from '@anthropic-ai/sdk';
 const client = new Anthropic({
   baseURL: process.env.ANTHROPIC_BASE_URL || undefined,
   apiKey: process.env.ANTHROPIC_AUTH_TOKEN || process.env.ANTHROPIC_API_KEY || undefined,
-  timeout: 120_000, // 2 分钟超时
+  timeout: 30_000, // 30 秒超时（单次调用）
 });
 
 const MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-20250514';
@@ -20,6 +20,7 @@ function sleep(ms: number) {
  */
 export async function callClaude(systemPrompt: string, userMessage: string): Promise<any> {
   let lastError: Error | null = null;
+  const start = Date.now();
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
@@ -30,12 +31,14 @@ export async function callClaude(systemPrompt: string, userMessage: string): Pro
         messages: [{ role: 'user', content: userMessage }],
       });
 
+      const elapsed = Date.now() - start;
       const text = response.content[0].type === 'text' ? response.content[0].text : '';
 
       // 尝试提取 JSON（兼容 markdown 代码块包裹）
       const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/) || [null, text];
       const jsonStr = jsonMatch[1].trim();
 
+      console.log(`[Claude] 调用成功，耗时 ${elapsed}ms，第 ${attempt} 次`);
       return JSON.parse(jsonStr);
     } catch (err: any) {
       lastError = err;
@@ -44,7 +47,7 @@ export async function callClaude(systemPrompt: string, userMessage: string): Pro
         || err?.code === 'ECONNRESET' || err?.code === 'ETIMEDOUT'
         || err?.message?.includes('timeout');
 
-      console.error(`[Claude] 第 ${attempt} 次调用失败: ${err.message}${isRetryable ? ' (可重试)' : ' (不可重试)'}`);
+      console.error(`[Claude] 第 ${attempt} 次调用失败 (${Date.now() - start}ms): ${err.message}${isRetryable ? ' 可重试' : ' 不可重试'}`);
 
       if (!isRetryable || attempt >= MAX_RETRIES) break;
       await sleep(RETRY_DELAY_MS * attempt);

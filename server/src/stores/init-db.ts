@@ -44,6 +44,8 @@ function initDb() {
       language_preference TEXT,
       scene_preference TEXT,
       do_not_play TEXT,
+      lifelong_top TEXT,
+      signatures TEXT,
       create_time TEXT NOT NULL DEFAULT (datetime('now','localtime')),
       modified_time TEXT NOT NULL DEFAULT (datetime('now','localtime')),
       create_user_no INTEGER,
@@ -154,6 +156,39 @@ function initDb() {
     );
     CREATE INDEX IF NOT EXISTS idx_device_user ON radio_play_device(user_id, device_type);
   `);
+
+  // 迁移：为 radio_user_profile 添加新列（已存在则忽略）
+  try {
+    db.exec(`ALTER TABLE radio_user_profile ADD COLUMN lifelong_top TEXT`);
+  } catch {}
+  try {
+    db.exec(`ALTER TABLE radio_user_profile ADD COLUMN signatures TEXT`);
+  } catch {}
+
+  // 迁移：为 radio_play_device 添加音量列
+  try {
+    db.exec(`ALTER TABLE radio_play_device ADD COLUMN volume INTEGER DEFAULT 100`);
+  } catch {}
+
+  // 迁移：为 radio_track 添加歌词列
+  try {
+    db.exec(`ALTER TABLE radio_track ADD COLUMN lyrics TEXT`);
+  } catch {}
+
+  // 种子数据：默认设备
+  const USER_ID = 443961717;
+  const existingDevices = db.prepare(`SELECT COUNT(*) as cnt FROM radio_play_device WHERE user_id = ?`).get(USER_ID) as any;
+  if (existingDevices.cnt === 0) {
+    db.prepare(`
+      INSERT INTO radio_play_device (user_id, device_name, device_type, default_device, online_status)
+      VALUES (?, 'Browser', 'WEB_AUDIO', 1, 'ONLINE')
+    `).run(USER_ID);
+    db.prepare(`
+      INSERT INTO radio_play_device (user_id, device_name, device_type, endpoint, default_device, online_status)
+      VALUES (?, 'Mock Speaker', 'MOCK_SPEAKER', 'http://localhost:8080/mock-speaker', 0, 'ONLINE')
+    `).run(USER_ID);
+    console.log('已插入默认设备种子数据');
+  }
 
   console.log('数据库初始化完成！');
 }

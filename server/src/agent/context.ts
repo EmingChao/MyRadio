@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { getWeatherSummary } from '../services/weather';
+import { getFullProfile } from '../stores/profile';
 
 /**
  * 组装 Claude 所需的上下文信息
@@ -100,16 +101,20 @@ export async function buildUserContext(params: {
 }
 
 /**
- * 组装用户音乐画像（精简版，供 Claude 使用）
+ * 组装用户音乐画像（DB 动态数据 + taste.json 合并）
  */
-export function buildMusicProfile(): any {
-  const taste = loadTasteProfile();
-  if (!taste) return {};
+export function buildMusicProfile(userId: number): any {
+  const profile = getFullProfile(userId);
+  if (!profile) return {};
 
   return {
-    favoriteArtists: taste.taste_profile?.favorite_artists?.slice(0, 10).map((a: any) => a.name) || [],
-    signatures: taste.taste_profile?.signatures || [],
-    byTimeOfDay: taste.taste_profile?.by_time_of_day || {},
-    byMood: taste.taste_profile?.by_mood || {},
+    signatures: profile.signatures,
+    favoriteArtists: profile.favoriteArtists.map((a: any) => a.name || a),
+    topArtistsByLibrary: profile.topArtistsByLibrary.slice(0, 10).map((a: any) => a.name),
+    lifelongTop: profile.lifelongTop.slice(0, 10).map((t: any) => `${t.title} - ${t.artist}`),
+    byTimeOfDay: profile.byTimeOfDay,
+    byMood: profile.byMood,
+    byScene: profile.byScene,
+    doNotPlay: profile.doNotPlay,
   };
 }

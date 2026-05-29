@@ -1,6 +1,6 @@
 import { ref, onUnmounted } from 'vue';
 
-export type WsEventType = 'TRACK_CHANGED' | 'QUEUE_UPDATED' | 'DJ_CHAT' | 'PLAYBACK_REPORT' | 'TTS_READY';
+export type WsEventType = 'TRACK_CHANGED' | 'QUEUE_UPDATED' | 'DJ_CHAT' | 'PLAYBACK_REPORT' | 'TTS_READY' | 'SLOT_CHANGED';
 
 export interface WsEvent {
   type: WsEventType;

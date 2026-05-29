@@ -3,6 +3,7 @@ import { callClaude } from './claude';
 import { RADIO_DJ_SYSTEM_PROMPT, buildRadioPrompt } from './prompts';
 import { recallCandidates, formatCandidatesForClaude } from './recall';
 import { buildUserContext, buildMusicProfile } from './context';
+import { AppError, ErrorCode, toAppError } from '../utils/errors';
 import type { Track } from '../types';
 
 /**
@@ -20,6 +21,7 @@ interface SessionResult {
   sessionTitle: string;
   aiSummary: string;
   say: string;
+  fallback?: boolean;
   tracks: Array<{
     trackId: number;
     title: string;
@@ -38,58 +40,80 @@ interface SessionResult {
  */
 export async function createRadioSession(params: CreateSessionParams): Promise<SessionResult> {
   const userId = 443961717;
+  const totalStart = Date.now();
 
   // 1. 召回候选歌曲
+  let t = Date.now();
   const scored = recallCandidates(userId, {
     scene: params.scene,
     mood: params.mood,
     limit: 100,
   });
+  console.log(`[Radio] 召回完成 ${Date.now() - t}ms，候选 ${scored.length} 首`);
 
   if (scored.length === 0) {
     throw new Error('没有候选歌曲');
   }
 
   // 2. 组装上下文
+  t = Date.now();
   const userContext = await buildUserContext({
     scene: params.scene,
     mood: params.mood,
     extraPrompt: params.extraPrompt,
   });
-
-  const musicProfile = buildMusicProfile();
+  const musicProfile = buildMusicProfile(userId);
   const candidates = formatCandidatesForClaude(scored);
+  console.log(`[Radio] 上下文构建 ${Date.now() - t}ms`);
 
   // 3. 调用 Claude
+  t = Date.now();
   const userMessage = buildRadioPrompt({ userContext, musicProfile, candidates });
   let claudeResult: any;
+  let isFallback = false;
 
   try {
     claudeResult = await callClaude(RADIO_DJ_SYSTEM_PROMPT, userMessage);
   } catch (err: any) {
+    console.log(`[Radio] Claude 调用耗时 ${Date.now() - t}ms`);
     // JSON 解析失败时重试一次
     if (err instanceof SyntaxError) {
-      console.warn('Claude 返回 JSON 解析失败，重试...');
-      claudeResult = await callClaude(
-        RADIO_DJ_SYSTEM_PROMPT,
-        userMessage + '\n\n上次返回的 JSON 格式有误，请严格按格式返回。'
-      );
+      console.warn('[Radio] Claude 返回 JSON 解析失败，重试...');
+      try {
+        claudeResult = await callClaude(
+          RADIO_DJ_SYSTEM_PROMPT,
+          userMessage + '\n\n上次返回的 JSON 格式有误，请严格按格式返回。'
+        );
+      } catch {
+        console.warn('[Radio] 重试失败，进入 fallback 模式');
+        claudeResult = buildFallbackResult(scored, params);
+        isFallback = true;
+      }
     } else {
-      throw err;
+      // 模型不可用，进入 fallback 模式
+      console.warn('[Radio] Claude 调用失败，进入 fallback 模式:', err.message);
+      claudeResult = buildFallbackResult(scored, params);
+      isFallback = true;
     }
   }
 
   // 4. 后端校验
+  t = Date.now();
   const validated = validateClaudeResult(claudeResult, scored);
+  console.log(`[Radio] 校验完成 ${Date.now() - t}ms，有效歌曲 ${validated.tracks.length} 首${isFallback ? ' (fallback)' : ''}`);
 
   // 5. 保存到数据库
+  t = Date.now();
   const sessionId = saveSession(userId, params, userContext, validated);
+  console.log(`[Radio] 保存完成 ${Date.now() - t}ms，sessionId=${sessionId}`);
+  console.log(`[Radio] 总耗时 ${Date.now() - totalStart}ms`);
 
   return {
     sessionId,
     sessionTitle: validated.sessionTitle,
     aiSummary: validated.summary || '',
     say: validated.say,
+    fallback: isFallback || undefined,
     tracks: validated.tracks.map((t: any) => ({
       trackId: t.trackId,
       title: t.title,
@@ -193,4 +217,30 @@ function saveSession(
   }
 
   return sessionId;
+}
+
+/**
+ * 构建 fallback 结果（模型不可用时的本地编排）
+ * 直接取召回 top 10，用模板生成文案
+ */
+function buildFallbackResult(scored: any[], params: CreateSessionParams): any {
+  const top = scored.slice(0, 10);
+  const sceneLabel = params.scene === 'coding' ? '编码'
+    : params.scene === 'working' ? '工作'
+    : params.scene === 'relaxing' ? '放松'
+    : params.scene === 'sleeping' ? '入眠'
+    : '日常';
+  const moodLabel = params.mood || '随意';
+
+  return {
+    sessionTitle: `${sceneLabel}电台 · ${moodLabel}模式`,
+    summary: '本地编排模式，基于你的听歌习惯自动生成。',
+    say: `${sceneLabel}时间到了，为你准备了几首歌，慢慢听。`,
+    tracks: top.map((s, i) => ({
+      trackId: s.track.id,
+      djScript: i === 0 ? '开始播放。' : `下一首，${s.track.title}。`,
+      recommendReason: s.reason || '为你推荐',
+      segue: i === 0 ? '开场' : '继续',
+    })),
+  };
 }

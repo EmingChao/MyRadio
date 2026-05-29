@@ -9,7 +9,8 @@ export type WsEvent =
   | { type: 'QUEUE_UPDATED'; data: { sessionId: number; tracks: any[] } }
   | { type: 'DJ_CHAT'; data: { sessionId: number; reply: string; intent: string } }
   | { type: 'PLAYBACK_REPORT'; data: { sessionId: number; trackId: number; action: string } }
-  | { type: 'TTS_READY'; data: { sessionId: number; ttsItems: Array<{ text: string; hash: string; audioUrl: string }> } };
+  | { type: 'TTS_READY'; data: { sessionId: number; ttsItems: Array<{ text: string; hash: string; audioUrl: string }> } }
+  | { type: 'SLOT_CHANGED'; data: { scene: string; mood: string; startTime: string; endTime: string } };
 
 /**
  * WebSocket 连接管理器
@@ -85,6 +86,20 @@ class WsManager {
     for (const ws of clients) {
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(message);
+      }
+    }
+  }
+
+  /**
+   * 向所有已连接的客户端广播事件（用于全局通知，如时段切换）
+   */
+  broadcastAll(event: WsEvent) {
+    const message = JSON.stringify(event);
+    for (const clients of this.sessionClients.values()) {
+      for (const ws of clients) {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(message);
+        }
       }
     }
   }

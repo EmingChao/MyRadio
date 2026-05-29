@@ -9,6 +9,7 @@ import {
   queryPlaylists,
   getTrackStats,
 } from '../stores/track';
+import { getTrackLyrics } from '../services/lyrics';
 
 const router = Router();
 
@@ -49,6 +50,19 @@ router.get('/stats', (_req, res) => {
 router.get('/playlists', (_req, res) => {
   const playlists = queryPlaylists(USER_ID);
   res.json({ code: 0, data: playlists });
+});
+
+/**
+ * GET /api/track/:id/lyrics — 获取歌曲歌词
+ */
+router.get('/:id/lyrics', async (req, res) => {
+  const trackId = Number(req.params.id);
+  try {
+    const data = await getTrackLyrics(trackId);
+    res.json({ code: 0, data });
+  } catch (e: any) {
+    res.json({ code: 500, message: e.message });
+  }
 });
 
 /**

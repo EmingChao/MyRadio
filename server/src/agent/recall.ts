@@ -2,6 +2,7 @@ import db from '../stores/db';
 import type { Track } from '../types';
 import fs from 'fs';
 import path from 'path';
+import { getUserProfile } from '../stores/profile';
 
 /**
  * 候选歌曲召回算法
@@ -28,6 +29,13 @@ interface ScoredTrack {
 export function recallCandidates(userId: number, ctx: RecallContext): ScoredTrack[] {
   const limit = ctx.limit || 100;
 
+  // 加载用户画像（do_not_play + favorite_genres）
+  const profile = getUserProfile(userId);
+  const doNotPlayTags: string[] = (profile?.doNotPlay || '')
+    .split(',').map(s => s.trim()).filter(Boolean);
+  const favoriteGenres: string[] = (profile?.favoriteGenres || '')
+    .split(',').map(s => s.trim()).filter(Boolean);
+
   // 获取所有歌曲
   const tracks = db.prepare(`
     SELECT * FROM radio_track WHERE user_id = ?
@@ -42,68 +50,92 @@ export function recallCandidates(userId: number, ctx: RecallContext): ScoredTrac
   const effectiveMood = ctx.mood || sceneRules[ctx.scene || '']?.moodMapping || '';
 
   // 评分
-  const scored: ScoredTrack[] = tracks.map(track => {
-    let score = 0;
-    const reasons: string[] = [];
-
-    // 1. 喜欢加分 (+30)
-    if (track.liked) {
-      score += 30;
-      reasons.push('喜欢');
-    }
-
-    // 2. 风格匹配 (+20)
-    if (moodRule && track.genre_tags) {
-      const tags = track.genre_tags.split(',').map(t => t.trim());
-      const matched = moodRule.preferredGenres.some((g: string) =>
-        tags.some(t => t.includes(g) || g.includes(t))
+  const scored: ScoredTrack[] = tracks
+    .filter(track => {
+      // 过滤 do_not_play：歌曲标签命中黑名单则排除
+      if (doNotPlayTags.length === 0) return true;
+      const trackTags = [
+        ...(track.genre_tags || '').split(','),
+        ...(track.mood_tags || '').split(','),
+      ].map(t => t.trim()).filter(Boolean);
+      return !trackTags.some(tag =>
+        doNotPlayTags.some(dnp => tag.includes(dnp) || dnp.includes(tag))
       );
-      if (matched) {
-        score += 20;
-        reasons.push('风格匹配');
+    })
+    .map(track => {
+      let score = 0;
+      const reasons: string[] = [];
+
+      // 1. 喜欢加分 (+30)
+      if (track.liked) {
+        score += 30;
+        reasons.push('喜欢');
       }
-    }
 
-    // 3. 心情匹配 (+20) — 基于标签
-    if (moodRule && track.mood_tags) {
-      const moods = track.mood_tags.split(',').map(t => t.trim());
-      const matched = moodRule.keywords?.some((k: string) =>
-        moods.some(m => m.includes(k) || k.includes(m))
-      );
-      if (matched) {
-        score += 20;
-        reasons.push('心情匹配');
+      // 2. 风格匹配 (+20)
+      if (moodRule && track.genre_tags) {
+        const tags = track.genre_tags.split(',').map(t => t.trim());
+        const matched = moodRule.preferredGenres.some((g: string) =>
+          tags.some(t => t.includes(g) || g.includes(t))
+        );
+        if (matched) {
+          score += 20;
+          reasons.push('风格匹配');
+        }
       }
-    }
 
-    // 4. 场景匹配 (+20) — 基于歌单来源
-    if (ctx.scene === 'coding' || ctx.scene === 'working') {
-      // 工作场景偏好说唱/纯音乐
-      if (track.genre_tags?.includes('说唱') || track.genre_tags?.includes('纯音乐')) {
-        score += 20;
-        reasons.push('工作场景匹配');
+      // 3. 用户偏好风格加分 (+10)
+      if (favoriteGenres.length > 0 && track.genre_tags) {
+        const tags = track.genre_tags.split(',').map(t => t.trim());
+        const matched = favoriteGenres.some(fg =>
+          tags.some(t => t.includes(fg) || fg.includes(t))
+        );
+        if (matched) {
+          score += 10;
+          reasons.push('用户偏好');
+        }
       }
-    }
 
-    // 5. 最近播放扣分 (-10~-30)
-    // 简化：按 play_count 越高扣分越多
-    if (track.play_count > 10) {
-      score -= Math.min(30, track.play_count);
-      reasons.push('播放较多');
-    }
+      // 4. 心情匹配 (+20) — 基于标签
+      if (moodRule && track.mood_tags) {
+        const moods = track.mood_tags.split(',').map(t => t.trim());
+        const matched = moodRule.keywords?.some((k: string) =>
+          moods.some(m => m.includes(k) || k.includes(m))
+        );
+        if (matched) {
+          score += 20;
+          reasons.push('心情匹配');
+        }
+      }
 
-    // 6. 跳过扣分 (-30)
-    if (track.skipped_count > 3) {
-      score -= 30;
-      reasons.push('经常跳过');
-    }
+      // 5. 场景匹配 (+20) — 基于歌单来源
+      if (ctx.scene === 'coding' || ctx.scene === 'working') {
+        // 工作场景偏好说唱/纯音乐
+        if (track.genre_tags?.includes('说唱') || track.genre_tags?.includes('纯音乐')) {
+          score += 20;
+          reasons.push('工作场景匹配');
+        }
+      }
 
-    return {
-      track,
-      score,
-      reason: reasons.join(', ') || '默认',
-    };
-  });
+      // 6. 最近播放扣分 (-10~-30)
+      // 简化：按 play_count 越高扣分越多
+      if (track.play_count > 10) {
+        score -= Math.min(30, track.play_count);
+        reasons.push('播放较多');
+      }
+
+      // 7. 跳过扣分 (-30)
+      if (track.skipped_count > 3) {
+        score -= 30;
+        reasons.push('经常跳过');
+      }
+
+      return {
+        track,
+        score,
+        reason: reasons.join(', ') || '默认',
+      };
+    });
 
   // 排序并取 top N
   scored.sort((a, b) => b.score - a.score);

@@ -1,26 +1,51 @@
-@import url('https://fonts.googleapis.com/css2?family=VT323&family=Press+Start+2P&family=JetBrains+Mono:wght@400;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=VT323&family=Press+Start+2P&family=JetBrains+Mono:wght@300;400;500;600&display=swap');
 
 :root {
-  --bg-deep: #07080c;
-  --bg-panel: #0d0f14;
-  --bg-surface: #12141b;
-  --bg-raised: #181b24;
-  --border: #1e2230;
-  --border-light: #2a2f40;
-  --text-primary: #c8ccd4;
-  --text-secondary: #6b7280;
-  --text-muted: #3d4455;
-  --accent: #4ade80;
-  --accent-dim: #22c55e;
-  --accent-glow: rgba(74, 222, 128, 0.15);
-  --warm: #f59e0b;
-  --warm-dim: #d97706;
-  --warm-glow: rgba(245, 158, 11, 0.12);
-  --red: #ef4444;
-  --red-dim: #dc2626;
+  /* Claudio 设计系统 — 舞台色 */
+  --stage-black: #050607;
+  --panel-black: #101214;
+  --surface: #16181c;
+  --raised: #1c1f24;
+  --paper: #f2eee6;
+  --paper-muted: #c9c0b2;
+  --ink: #151515;
+  --signal: #37d67a;
+  --signal-dim: rgba(55, 214, 122, 0.15);
+  --signal-glow: rgba(55, 214, 122, 0.08);
+  --line: rgba(242, 238, 230, 0.08);
+  --line-m: rgba(242, 238, 230, 0.14);
+  --danger: #d85c4a;
+
+  /* 向后兼容 — 旧变量名映射到新色值 */
+  --bg-deep: var(--stage-black);
+  --bg-panel: var(--panel-black);
+  --bg-surface: var(--surface);
+  --bg-raised: var(--raised);
+  --border: rgba(242, 238, 230, 0.06);
+  --border-light: rgba(242, 238, 230, 0.12);
+  --text-primary: #f0ece4;
+  --text-2: #a8a098;
+  --text-3: #6b6560;
+  --text-secondary: var(--text-2);
+  --text-muted: var(--text-3);
+  --accent: var(--signal);
+  --accent-dim: var(--signal-dim);
+  --accent-glow: var(--signal-glow);
+  --warm: #d6a84f;
+  --warm-dim: rgba(214, 168, 79, 0.25);
+  --warm-glow: rgba(214, 168, 79, 0.1);
+  --red: var(--danger);
+  --red-dim: #c44e3d;
+
+  /* 字体 */
+  --font-brand: 'VT323', monospace;
   --font-pixel: 'VT323', monospace;
   --font-mono: 'JetBrains Mono', 'Courier New', monospace;
-  --font-display: 'Press Start 2P', cursive;
+  --font-display: 'VT323', monospace;
+
+  /* 圆角 */
+  --radius: 12px;
+  --radius-lg: 18px;
 }
 
 * {
@@ -30,10 +55,10 @@
 }
 
 body {
-  background: var(--bg-deep);
+  background: #000;
   color: var(--text-primary);
-  font-family: var(--font-pixel);
-  font-size: 18px;
+  font-family: var(--font-mono);
+  font-size: 14px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
@@ -42,22 +67,6 @@ body {
 #app {
   width: 100%;
   height: 100vh;
-}
-
-/* CRT scanline overlay */
-body::after {
-  content: '';
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 9999;
-  background: repeating-linear-gradient(
-    0deg,
-    transparent,
-    transparent 2px,
-    rgba(0, 0, 0, 0.03) 2px,
-    rgba(0, 0, 0, 0.03) 4px
-  );
 }
 
 ::-webkit-scrollbar {
@@ -76,4 +85,18 @@ body::after {
 button {
   cursor: pointer;
   font-family: var(--font-pixel);
+}
+
+/* 移动端响应式基础 */
+@media (max-width: 768px) {
+  body {
+    overflow: auto;
+  }
+
+  #app {
+    height: auto;
+    min-height: 100vh;
+    min-height: 100dvh;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
 }

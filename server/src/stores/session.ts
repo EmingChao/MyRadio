@@ -57,6 +57,7 @@ export function getSessionTracksWithDetail(sessionId: number) {
       t.album,
       t.cover_url AS coverUrl,
       t.play_url AS playUrl,
+      t.lyrics,
       st.dj_script AS djScript,
       st.recommend_reason AS recommendReason,
       st.segue

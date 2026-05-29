@@ -4,6 +4,7 @@ import { CHAT_SYSTEM_PROMPT, buildChatPrompt } from './prompts';
 import { getSession, getSessionTracks, insertSessionTracks } from '../stores/session';
 import { getTrackById } from '../stores/track';
 import { recallCandidates, formatCandidatesForClaude } from './recall';
+import { appendDoNotPlay, appendFavoriteGenres } from '../stores/profile';
 
 /**
  * 处理聊天消息
@@ -57,7 +58,18 @@ export async function handleChat(sessionId: number, message: string): Promise<an
     candidates: JSON.stringify(candidates),
   });
 
-  const result = await callClaude(CHAT_SYSTEM_PROMPT, prompt);
+  let result: any;
+  try {
+    result = await callClaude(CHAT_SYSTEM_PROMPT, prompt);
+  } catch (err: any) {
+    console.error('[Chat] Claude 调用失败:', err.message);
+    return {
+      reply: 'DJ 暂时不在服务区，稍后再聊吧。',
+      intent: 'CHAT',
+      queueChanged: false,
+    };
+  }
+
   const intent = result.intent || 'CHAT';
   let queueChanged = false;
 
@@ -67,8 +79,8 @@ export async function handleChat(sessionId: number, message: string): Promise<an
   }
 
   // 处理 SAVE_PREFERENCE
-  if (intent === 'SAVE_PREFERENCE' && result.preferenceToSave) {
-    handleSavePreference(session.userId, result.preferenceToSave);
+  if (intent === 'SAVE_PREFERENCE' && result.preference) {
+    handleSavePreference(session.userId, result.preference);
   }
 
   return {
@@ -124,29 +136,25 @@ async function handleReorderQueue(
 }
 
 /**
- * 处理偏好保存：将用户偏好写入备注（简化实现）
+ * 处理偏好保存：根据结构化偏好写入对应字段
  */
-function handleSavePreference(userId: number, preference: string) {
-  // 检查是否已有用户画像
-  const existing = db.prepare(
-    'SELECT id FROM radio_user_profile WHERE user_id = ? LIMIT 1'
-  ).get(userId) as { id: number } | undefined;
+function handleSavePreference(userId: number, preference: { preferenceType: string; category: string; value: string }) {
+  const { preferenceType, category, value } = preference;
+  if (!value) return;
 
-  if (existing) {
-    // 追加到 do_not_play 或 scene_preference
-    db.prepare(`
-      UPDATE radio_user_profile
-      SET do_not_play = CASE
-        WHEN do_not_play IS NULL OR do_not_play = '' THEN ?
-        ELSE do_not_play || ',' || ?
-      END,
-      modified_time = datetime('now','localtime')
-      WHERE id = ?
-    `).run(preference, preference, existing.id);
-  } else {
-    db.prepare(`
-      INSERT INTO radio_user_profile (user_id, profile_name, do_not_play)
-      VALUES (?, 'default', ?)
-    `).run(userId, preference);
+  console.log(`[Chat] 保存偏好: ${preferenceType} ${category}=${value}`);
+
+  if (preferenceType === 'negative') {
+    // 负向偏好 → 写入 do_not_play
+    appendDoNotPlay(userId, value);
+  } else if (preferenceType === 'positive') {
+    // 正向偏好 → 根据 category 写入对应字段
+    if (category === 'genre' || category === 'mood') {
+      appendFavoriteGenres(userId, value);
+    } else if (category === 'artist') {
+      // 艺人偏好追加到 favorite_genres（作为标签）
+      appendFavoriteGenres(userId, value);
+    }
+    // scene 暂不处理，后续可扩展
   }
 }
