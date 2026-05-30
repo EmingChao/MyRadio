@@ -13,6 +13,13 @@ const BATCH_SIZE = 200;
 const COOKIE_FILE = path.resolve(__dirname, '../../data/netease-cookie.txt');
 
 /**
+ * 网易云 SDK 类型声明较宽，这里按 song_url 实际返回体做局部收窄。
+ */
+function bodyOf<T>(result: { body?: unknown }): T {
+  return (result.body || {}) as T;
+}
+
+/**
  * 加载登录 cookie
  */
 function loadCookie(): string {
@@ -67,7 +74,8 @@ async function fetchPlayUrls() {
     try {
       // 传入 cookie 获取完整播放地址（VIP 歌曲需要会员 cookie）
       const result = await song_url({ id: ids.join(','), br: 999000, cookie });
-      const urlData = result.body?.data || [];
+      const body = bodyOf<{ data?: Array<{ id: number; url?: string }> }>(result);
+      const urlData = body.data || [];
 
       // 建立 source_track_id -> url 的映射
       const urlMap = new Map<number, string>();

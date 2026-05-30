@@ -36,8 +36,12 @@ const tabs = [
   display: flex;
   padding: 4px 0 calc(4px + env(safe-area-inset-bottom, 8px));
   border-top: 1px solid var(--line);
-  background: var(--panel-black);
+  background: rgba(9, 11, 15, 0.9);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
   flex-shrink: 0;
+  position: relative;
+  z-index: 1;
 }
 
 .tab-item {
@@ -52,11 +56,23 @@ const tabs = [
   transition: all 0.15s;
   border: none;
   background: none;
+  position: relative;
+}
+
+.tab-item::before {
+  content: '';
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: transparent;
+  position: absolute;
+  top: 5px;
+  transition: background 0.15s, box-shadow 0.15s;
 }
 
 .tab-icon {
   font-size: 16px;
-  color: var(--text-3);
+  color: rgba(143, 138, 131, 0.72);
   transition: color 0.15s;
   line-height: 1;
 }
@@ -64,21 +80,26 @@ const tabs = [
 .tab-label {
   font-family: var(--font-mono);
   font-size: 8px;
-  color: var(--text-3);
+  color: rgba(143, 138, 131, 0.72);
   letter-spacing: 1px;
   text-transform: uppercase;
   transition: color 0.15s;
 }
 
 .tab-item.active .tab-icon {
-  color: var(--signal);
+  color: var(--text-primary);
 }
 
 .tab-item.active .tab-label {
-  color: var(--signal);
+  color: var(--text-primary);
+}
+
+.tab-item.active::before {
+  background: var(--signal);
+  box-shadow: 0 0 10px rgba(56, 217, 120, 0.35);
 }
 
 .tab-item:active {
-  background: var(--surface);
+  background: rgba(244, 239, 228, 0.045);
 }
 </style>

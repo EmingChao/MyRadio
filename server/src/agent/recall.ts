@@ -21,6 +21,7 @@ interface ScoredTrack {
   track: Track;
   score: number;
   reason: string;
+  sourceScope?: 'library' | 'explore';
 }
 
 /**
@@ -165,5 +166,9 @@ export function formatCandidatesForClaude(scored: ScoredTrack[]) {
       s.track.mood_tags,
     ].filter(Boolean).join(', ') || undefined,
     liked: s.track.liked === 1,
+    sourceScope: s.sourceScope || (s.track.source_type === 'NETEASE_EXPLORE' ? 'explore' : 'library'),
+    sourceHint: s.sourceScope === 'explore' || s.track.source_type === 'NETEASE_EXPLORE'
+      ? '主动探索候选：这首可能不在用户原歌单里，需要说明和用户品味、当前场景的连接。'
+      : undefined,
   }));
 }

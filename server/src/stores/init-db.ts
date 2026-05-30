@@ -3,7 +3,7 @@ import db from './db';
 /**
  * 初始化数据库，创建所有表和索引
  */
-function initDb() {
+export function initDb() {
   console.log('正在初始化数据库...');
 
   db.exec(`
@@ -193,7 +193,9 @@ function initDb() {
   console.log('数据库初始化完成！');
 }
 
-// 直接运行时执行初始化
-initDb();
+// 直接运行脚本时执行初始化；服务启动时由 index.ts 显式调用。
+if (require.main === module) {
+  initDb();
+}
 
 export default initDb;

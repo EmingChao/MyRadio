@@ -1,4 +1,7 @@
 import { Router } from 'express';
+import fs from 'fs';
+import path from 'path';
+import db from '../stores/db';
 import { createRadioSession } from '../agent/radio';
 import { getSession, getRecentSession, getSessionTracksWithDetail, updateTrackPlayStatus } from '../stores/session';
 import { incrementPlayCount, incrementSkipCount } from '../stores/track';
@@ -6,6 +9,7 @@ import { autoUpdateProfile } from '../stores/profile';
 import { synthesizeSpeech, getTextHash } from '../services/tts';
 import { wsManager } from '../ws/manager';
 import { getCurrentSceneAndMood } from '../services/daily-plan';
+import { song_url } from 'NeteaseCloudMusicApi';
 
 const router = Router();
 
@@ -53,19 +57,20 @@ router.post('/session/create-from-plan', async (req, res) => {
 
 /**
  * 异步生成会话的 TTS 音频
- * 只对 say（开场白）和 segue（串场词）做 TTS
+ * 只对 say（开场白）和 voiceIntro（歌曲前完整独白）做 TTS
  */
 async function generateTtsForSession(
   sessionId: number,
   say: string,
-  tracks: Array<{ trackId: number; segue: string }>
+  tracks: Array<{ trackId: number; segue: string; voiceIntro?: string }>
 ) {
   const textsToSynthesize: string[] = [];
 
   // 收集需要合成的文本
   if (say) textsToSynthesize.push(say);
   for (const track of tracks) {
-    if (track.segue) textsToSynthesize.push(track.segue);
+    const spokenText = track.voiceIntro || track.segue;
+    if (spokenText) textsToSynthesize.push(spokenText);
   }
 
   console.log(`[TTS] 开始生成 ${textsToSynthesize.length} 段语音...`);
@@ -128,14 +133,47 @@ router.get('/now', (_req, res) => {
 /**
  * GET /api/radio/session/:id/tracks — 刷新会话歌曲（获取最新播放地址）
  */
-router.get('/session/:id/tracks', (req, res) => {
+router.get('/session/:id/tracks', async (req, res) => {
   try {
     const sessionId = Number(req.params.id);
     const session = getSession(sessionId);
     if (!session) {
       return res.status(404).json({ code: 404, message: '会话不存在' });
     }
-    const tracks = getSessionTracksWithDetail(sessionId);
+
+    // 先从数据库获取当前数据
+    let tracks = getSessionTracksWithDetail(sessionId) as any[];
+
+    // 刷新播放地址（CDN 链接有时效性）
+    const COOKIE_FILE = path.resolve(__dirname, '../../data/netease-cookie.txt');
+    if (fs.existsSync(COOKIE_FILE)) {
+      const cookie = fs.readFileSync(COOKIE_FILE, 'utf-8').trim();
+      const sourceIds = tracks.map(t => Number(t.sourceTrackId)).filter(id => !isNaN(id));
+
+      if (sourceIds.length > 0) {
+        try {
+          const result = await song_url({ id: sourceIds.join(','), br: 999000, cookie });
+          const urlData = (result.body?.data || []) as any[];
+          const urlMap = new Map<number, string>();
+          for (const item of urlData) {
+            if (item.url) urlMap.set(item.id, item.url);
+          }
+
+          // 更新数据库和返回数据
+          const updateStmt = db.prepare('UPDATE radio_track SET play_url = ? WHERE source_track_id = ?');
+          for (const t of tracks) {
+            const url = urlMap.get(Number(t.sourceTrackId));
+            if (url) {
+              t.playUrl = url;
+              updateStmt.run(url, String(t.sourceTrackId));
+            }
+          }
+        } catch (err: any) {
+          console.error('[Radio] 刷新播放地址失败:', err.message);
+        }
+      }
+    }
+
     res.json({ code: 0, data: tracks });
   } catch (err: any) {
     res.status(500).json({ code: 500, message: err.message });

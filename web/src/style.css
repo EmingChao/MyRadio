@@ -1,19 +1,25 @@
 @import url('https://fonts.googleapis.com/css2?family=VT323&family=Press+Start+2P&family=JetBrains+Mono:wght@300;400;500;600&display=swap');
 
 :root {
-  /* Claudio 设计系统 — 舞台色 */
-  --stage-black: #050607;
-  --panel-black: #101214;
-  --surface: #16181c;
-  --raised: #1c1f24;
-  --paper: #f2eee6;
-  --paper-muted: #c9c0b2;
-  --ink: #151515;
-  --signal: #37d67a;
-  --signal-dim: rgba(55, 214, 122, 0.15);
-  --signal-glow: rgba(55, 214, 122, 0.08);
-  --line: rgba(242, 238, 230, 0.08);
-  --line-m: rgba(242, 238, 230, 0.14);
+  /* Claudio V2 设计系统 — 深色氛围与声音层 */
+  --stage-black: #08090d;
+  --stage-deep: #0d1016;
+  --panel-black: #11141a;
+  --surface: rgba(21, 24, 31, 0.78);
+  --raised: rgba(29, 33, 42, 0.82);
+  --glass: rgba(18, 21, 27, 0.72);
+  --glass-soft: rgba(255, 255, 255, 0.045);
+  --paper: #f1e9d8;
+  --paper-muted: #a99f8d;
+  --ink: #171613;
+  --signal: #38d978;
+  --signal-dim: rgba(56, 217, 120, 0.12);
+  --signal-glow: rgba(56, 217, 120, 0.08);
+  --ember: #c86f3d;
+  --ember-dim: rgba(200, 111, 61, 0.18);
+  --wave: rgba(241, 233, 216, 0.72);
+  --line: rgba(244, 239, 228, 0.075);
+  --line-m: rgba(244, 239, 228, 0.14);
   --danger: #d85c4a;
 
   /* 向后兼容 — 旧变量名映射到新色值 */
@@ -21,19 +27,19 @@
   --bg-panel: var(--panel-black);
   --bg-surface: var(--surface);
   --bg-raised: var(--raised);
-  --border: rgba(242, 238, 230, 0.06);
-  --border-light: rgba(242, 238, 230, 0.12);
-  --text-primary: #f0ece4;
-  --text-2: #a8a098;
-  --text-3: #6b6560;
+  --border: rgba(244, 239, 228, 0.06);
+  --border-light: rgba(244, 239, 228, 0.12);
+  --text-primary: #f4efe4;
+  --text-2: #b2aaa0;
+  --text-3: #8f8a83;
   --text-secondary: var(--text-2);
   --text-muted: var(--text-3);
   --accent: var(--signal);
   --accent-dim: var(--signal-dim);
   --accent-glow: var(--signal-glow);
-  --warm: #d6a84f;
-  --warm-dim: rgba(214, 168, 79, 0.25);
-  --warm-glow: rgba(214, 168, 79, 0.1);
+  --warm: #d8b56a;
+  --warm-dim: rgba(216, 181, 106, 0.2);
+  --warm-glow: rgba(216, 181, 106, 0.1);
   --red: var(--danger);
   --red-dim: #c44e3d;
 
@@ -41,11 +47,12 @@
   --font-brand: 'VT323', monospace;
   --font-pixel: 'VT323', monospace;
   --font-mono: 'JetBrains Mono', 'Courier New', monospace;
+  --font-body: 'PingFang SC', 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
   --font-display: 'VT323', monospace;
 
   /* 圆角 */
-  --radius: 12px;
-  --radius-lg: 18px;
+  --radius: 10px;
+  --radius-lg: 14px;
 }
 
 * {
@@ -55,9 +62,9 @@
 }
 
 body {
-  background: #000;
+  background: var(--stage-black);
   color: var(--text-primary);
-  font-family: var(--font-mono);
+  font-family: var(--font-body);
   font-size: 14px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
@@ -85,6 +92,38 @@ body {
 button {
   cursor: pointer;
   font-family: var(--font-pixel);
+}
+
+@keyframes cover-breathe {
+  0%, 100% {
+    transform: translateY(0) scale(1);
+    filter: saturate(1.04) brightness(1);
+  }
+  50% {
+    transform: translateY(-2px) scale(1.012);
+    filter: saturate(1.12) brightness(1.06);
+  }
+}
+
+@keyframes wave-rise {
+  0%, 100% { transform: scaleY(0.35); opacity: 0.46; }
+  50% { transform: scaleY(1); opacity: 0.92; }
+}
+
+@keyframes ambient-drift {
+  0%, 100% { transform: translate3d(-1%, -1%, 0) scale(1); opacity: 0.78; }
+  50% { transform: translate3d(1.5%, 1%, 0) scale(1.04); opacity: 0.92; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.001ms !important;
+  }
 }
 
 /* 移动端响应式基础 */

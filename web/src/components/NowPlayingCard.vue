@@ -59,10 +59,10 @@ function handleProgressClick(e: MouseEvent) {
       </div>
     </div>
 
-    <!-- DJ segue -->
-    <div v-if="store.currentTrack?.segue" class="np-segue">
+    <!-- DJ 独白 -->
+    <div v-if="store.currentTrack?.voiceIntro || store.currentTrack?.segue" class="np-segue">
       <span class="segue-dj">DJ</span>
-      <span class="segue-text">{{ store.currentTrack.segue }}</span>
+      <span class="segue-text">{{ store.currentTrack.voiceIntro || store.currentTrack.segue }}</span>
     </div>
 
     <!-- 进度条 -->
@@ -250,7 +250,7 @@ function handleProgressClick(e: MouseEvent) {
   white-space: nowrap;
 }
 
-/* DJ segue */
+/* DJ 独白 */
 .np-segue {
   width: 100%;
   display: flex;
@@ -271,8 +271,13 @@ function handleProgressClick(e: MouseEvent) {
 
 .segue-text {
   font-family: var(--font-pixel);
-  font-size: 14px;
+  font-size: 12px;
   color: var(--text-secondary);
+  line-height: 1.5;
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
 }
 
 /* 进度条 */

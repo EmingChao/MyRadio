@@ -12,8 +12,22 @@ const TTS_MODEL = 'mimo-v2.5-tts-voiceclone';
 const CACHE_DIR = path.resolve(__dirname, '../../data/tts-cache');
 const REFERENCE_AUDIO_PATH = path.resolve(__dirname, '../../../files/bilibili_audio_first18s.mp3');
 
-// 风格控制指令（深夜电台 DJ 风格）
-const STYLE_PROMPT = '(低沉)(磁性)(慵懒)深夜电台主播风格，语速偏慢，停顿自然';
+// 风格控制指令（体验优先的私人电台 DJ 风格）
+const STYLE_PROMPT = [
+  '(温暖)(克制)(低沉)私人深夜电台 DJ 风格',
+  '语速中慢，停顿自然，句尾不要拖得夸张',
+  '像懂用户品味的朋友在介绍歌曲和承接情绪，不要播音腔，不要营销腔',
+].join('，');
+
+interface TtsApiResponse {
+  choices?: Array<{
+    message?: {
+      audio?: {
+        data?: string;
+      };
+    };
+  }>;
+}
 
 /**
  * 加载参考音频为 base64
@@ -119,7 +133,7 @@ export async function synthesizeSpeech(text: string): Promise<string | null> {
       return null;
     }
 
-    const data = await response.json();
+    const data = await response.json() as TtsApiResponse;
     const audioData = data?.choices?.[0]?.message?.audio?.data;
 
     if (!audioData) {

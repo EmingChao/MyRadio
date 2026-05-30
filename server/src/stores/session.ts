@@ -52,6 +52,7 @@ export function getSessionTracksWithDetail(sessionId: number) {
   return db.prepare(`
     SELECT
       st.track_id AS trackId,
+      t.source_track_id AS sourceTrackId,
       t.title,
       t.artist,
       t.album,
@@ -60,7 +61,12 @@ export function getSessionTracksWithDetail(sessionId: number) {
       t.lyrics,
       st.dj_script AS djScript,
       st.recommend_reason AS recommendReason,
-      st.segue
+      st.segue,
+      TRIM(
+        COALESCE(st.segue, '') || ' ' ||
+        COALESCE(st.dj_script, '') || ' ' ||
+        COALESCE(st.recommend_reason, '')
+      ) AS voiceIntro
     FROM radio_session_track st
     JOIN radio_track t ON t.id = st.track_id
     WHERE st.session_id = ?

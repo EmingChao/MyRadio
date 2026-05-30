@@ -5,6 +5,13 @@ import { login_qr_key, login_qr_create, login_qr_check, login_status } from 'Net
 const COOKIE_FILE = path.resolve(__dirname, '../../data/netease-cookie.txt');
 
 /**
+ * 网易云 SDK 类型声明较宽，这里按脚本实际使用的返回体做局部收窄。
+ */
+function bodyOf<T>(result: { body?: unknown }): T {
+  return (result.body || {}) as T;
+}
+
+/**
  * 网易云 QR 码登录
  * 生成二维码 → 等待扫码 → 保存 cookie
  */
@@ -12,17 +19,19 @@ async function qrLogin() {
   console.log('=== 网易云音乐 QR 码登录 ===\n');
 
   // 1. 获取 unikey
-  const keyRes = await login_qr_key({ timestamp: Date.now() });
-  const unikey = keyRes.body.data.unikey;
+  const keyRes = await login_qr_key({ timestamp: Date.now() } as any);
+  const keyBody = bodyOf<{ data?: { unikey?: string } }>(keyRes);
+  const unikey = keyBody.data?.unikey;
   if (!unikey) {
     console.error('获取 unikey 失败');
     process.exit(1);
   }
 
   // 2. 生成二维码 URL
-  const qrRes = await login_qr_create({ key: unikey, qrimg: 'true', timestamp: Date.now() });
-  const qrurl = qrRes.body.data.qrurl;
-  const qrimg = qrRes.body.data.qrimg; // base64 图片
+  const qrRes = await login_qr_create({ key: unikey, qrimg: 'true', timestamp: Date.now() } as any);
+  const qrBody = bodyOf<{ data?: { qrurl?: string; qrimg?: string } }>(qrRes);
+  const qrurl = qrBody.data?.qrurl || '';
+  const qrimg = qrBody.data?.qrimg; // base64 图片
 
   console.log('请使用网易云音乐 APP 扫描以下二维码登录：\n');
   console.log(qrurl);
@@ -47,12 +56,13 @@ async function qrLogin() {
     attempts++;
 
     try {
-      const checkRes = await login_qr_check({ key: unikey, timestamp: Date.now() });
-      const code = checkRes.body.code;
+      const checkRes = await login_qr_check({ key: unikey, timestamp: Date.now() } as any);
+      const checkBody = bodyOf<{ code?: number; cookie?: string }>(checkRes);
+      const code = checkBody.code;
 
       if (code === 803) {
         // 登录成功
-        cookie = checkRes.body.cookie;
+        cookie = checkBody.cookie || '';
         console.log('\n登录成功！');
         break;
       } else if (code === 800) {
@@ -83,7 +93,8 @@ async function qrLogin() {
   // 5. 验证登录状态
   try {
     const statusRes = await login_status({ cookie });
-    const profile = statusRes.body.data?.profile;
+    const statusBody = bodyOf<{ data?: { profile?: { nickname: string; userId: number } } }>(statusRes);
+    const profile = statusBody.data?.profile;
     if (profile) {
       console.log(`\n当前登录用户: ${profile.nickname} (ID: ${profile.userId})`);
     }

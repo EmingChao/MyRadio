@@ -9,6 +9,14 @@ interface WeatherData {
   precipitation: number;  // 降水量 (mm)
 }
 
+interface OpenMeteoResponse {
+  current: {
+    temperature_2m: number;
+    weather_code: number;
+    precipitation?: number;
+  };
+}
+
 // WMO 天气代码映射
 const WEATHER_CODES: Record<number, string> = {
   0: '晴',
@@ -59,7 +67,7 @@ export async function getWeather(latitude?: number, longitude?: number): Promise
       throw new Error(`Open-Meteo API 错误: ${response.status}`);
     }
 
-    const data = await response.json();
+    const data = await response.json() as OpenMeteoResponse;
     const current = data.current;
 
     cachedWeather = {

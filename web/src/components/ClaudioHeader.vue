@@ -69,10 +69,12 @@ const tagline = computed(() => {
 .claudio-header {
   display: flex;
   align-items: flex-start;
-  padding: 10px 16px 8px;
+  padding: 11px 16px 8px;
   gap: 8px;
   flex-shrink: 0;
   background: transparent;
+  position: relative;
+  z-index: 1;
 }
 
 .hdr-avatar {
@@ -80,15 +82,16 @@ const tagline = computed(() => {
   height: 26px;
   border-radius: 50%;
   background:
-    radial-gradient(circle at 35% 25%, rgba(242, 238, 230, 0.18), transparent 32%),
-    var(--surface);
-  border: 1.5px solid var(--signal-dim);
+    radial-gradient(circle at 36% 28%, rgba(241, 233, 216, 0.32), transparent 28%),
+    radial-gradient(circle at 68% 76%, rgba(200, 111, 61, 0.42), transparent 34%),
+    var(--raised);
+  border: 1px solid rgba(244, 239, 228, 0.16);
   display: flex;
   align-items: center;
   justify-content: center;
   font-family: var(--font-brand);
   font-size: 14px;
-  color: var(--signal);
+  color: var(--paper);
   position: relative;
   flex-shrink: 0;
   margin-top: 1px;
@@ -117,8 +120,8 @@ const tagline = computed(() => {
 }
 
 @keyframes hdr-pulse {
-  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(55, 214, 122, 0.4); }
-  50% { opacity: 0.7; box-shadow: 0 0 4px 1px rgba(55, 214, 122, 0.15); }
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(56, 217, 120, 0.34); }
+  50% { opacity: 0.72; box-shadow: 0 0 5px 1px rgba(56, 217, 120, 0.16); }
 }
 
 .hdr-identity {
@@ -148,14 +151,16 @@ const tagline = computed(() => {
   font-size: 8px;
   color: var(--text-3);
   letter-spacing: 1px;
-  padding: 1px 5px;
+  padding: 1px 6px;
   border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(244, 239, 228, 0.035);
   text-transform: uppercase;
 }
 
 .hdr-status.online {
-  color: var(--signal);
-  border-color: var(--signal-dim);
+  color: var(--text-primary);
+  border-color: rgba(56, 217, 120, 0.2);
 }
 
 .hdr-subline {
@@ -163,7 +168,7 @@ const tagline = computed(() => {
   align-items: center;
   gap: 5px;
   max-width: 190px;
-  font-family: var(--font-mono);
+  font-family: var(--font-body);
   font-size: 8px;
   color: var(--text-3);
   letter-spacing: 0.4px;
@@ -204,7 +209,7 @@ const tagline = computed(() => {
   margin-left: auto;
   font-family: var(--font-brand);
   font-size: 24px;
-  color: var(--text-2);
+  color: rgba(244, 239, 228, 0.72);
   letter-spacing: 2px;
 }
 
@@ -213,7 +218,7 @@ const tagline = computed(() => {
   height: 26px;
   border-radius: 50%;
   border: 1px solid var(--line);
-  background: transparent;
+  background: rgba(244, 239, 228, 0.035);
   color: var(--text-3);
   font-size: 14px;
   display: flex;

@@ -8,6 +8,13 @@ const router = Router();
 const COOKIE_FILE = path.resolve(__dirname, '../../data/netease-cookie.txt');
 
 /**
+ * 网易云 SDK 类型声明较宽，这里按运行时返回体做局部收窄。
+ */
+function bodyOf<T>(result: { body?: unknown }): T {
+  return (result.body || {}) as T;
+}
+
+/**
  * GET /api/netease/login/status — 检查网易云登录状态
  */
 router.get('/login/status', async (_req, res) => {
@@ -17,7 +24,8 @@ router.get('/login/status', async (_req, res) => {
     }
     const cookie = fs.readFileSync(COOKIE_FILE, 'utf-8').trim();
     const result = await login_status({ cookie });
-    const profile = result.body?.data?.profile;
+    const body = bodyOf<{ data?: { profile?: { nickname: string; userId: number; avatarUrl?: string } } }>(result);
+    const profile = body.data?.profile;
     if (profile) {
       res.json({
         code: 0,
@@ -42,8 +50,9 @@ router.get('/login/status', async (_req, res) => {
  */
 router.post('/qr/create', async (_req, res) => {
   try {
-    const keyRes = await login_qr_key({ timestamp: Date.now() });
-    const unikey = keyRes.body?.data?.unikey;
+    const keyRes = await login_qr_key({ timestamp: Date.now() } as any);
+    const keyBody = bodyOf<{ data?: { unikey?: string } }>(keyRes);
+    const unikey = keyBody.data?.unikey;
     if (!unikey) {
       return res.status(500).json({ code: 500, message: '获取二维码 key 失败' });
     }
@@ -52,14 +61,15 @@ router.post('/qr/create', async (_req, res) => {
       key: unikey,
       qrimg: 'true',
       timestamp: Date.now(),
-    });
+    } as any);
+    const qrBody = bodyOf<{ data?: { qrimg?: string; qrurl?: string } }>(qrRes);
 
     res.json({
       code: 0,
       data: {
         key: unikey,
-        qrimg: qrRes.body?.data?.qrimg || '',
-        qrurl: qrRes.body?.data?.qrurl || '',
+        qrimg: qrBody.data?.qrimg || '',
+        qrurl: qrBody.data?.qrurl || '',
       },
     });
   } catch (err: any) {
@@ -82,13 +92,14 @@ router.get('/qr/check', async (req, res) => {
     const result = await login_qr_check({
       key: String(key),
       timestamp: Date.now(),
-    });
+    } as any);
+    const body = bodyOf<{ code?: number; cookie?: string }>(result);
 
-    const statusCode = result.body?.code;
+    const statusCode = body.code;
 
     // 登录成功，保存 cookie
-    if (statusCode === 803 && result.body?.cookie) {
-      fs.writeFileSync(COOKIE_FILE, result.body.cookie);
+    if (statusCode === 803 && body.cookie) {
+      fs.writeFileSync(COOKIE_FILE, body.cookie);
       console.log('[Netease] 登录成功，cookie 已保存');
     }
 
@@ -160,7 +171,8 @@ async function fetchPlayUrlsWithCookie(cookie: string) {
 
     try {
       const result = await song_url({ id: ids.join(','), br: 999000, cookie });
-      const urlData = result.body?.data || [];
+      const body = bodyOf<{ data?: Array<{ id: number; url?: string }> }>(result);
+      const urlData = body.data || [];
 
       const urlMap = new Map<number, string>();
       for (const item of urlData) {

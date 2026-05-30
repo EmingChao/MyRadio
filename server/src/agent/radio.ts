@@ -1,9 +1,14 @@
+import fs from 'fs';
+import path from 'path';
 import db from '../stores/db';
 import { callClaude } from './claude';
 import { RADIO_DJ_SYSTEM_PROMPT, buildRadioPrompt } from './prompts';
 import { recallCandidates, formatCandidatesForClaude } from './recall';
+import { recallExploreCandidates } from './explore';
 import { buildUserContext, buildMusicProfile } from './context';
+import { buildFallbackTrackCopy, buildOpeningCopy, buildTrackVoiceIntro, enrichTrackCopyIfNeeded, getSceneLabel } from './dj-copy';
 import { AppError, ErrorCode, toAppError } from '../utils/errors';
+import { song_url } from 'NeteaseCloudMusicApi';
 import type { Track } from '../types';
 
 /**
@@ -24,6 +29,7 @@ interface SessionResult {
   fallback?: boolean;
   tracks: Array<{
     trackId: number;
+    sourceTrackId: string;
     title: string;
     artist: string;
     album: string | null;
@@ -32,6 +38,7 @@ interface SessionResult {
     djScript: string;
     recommendReason: string;
     segue: string;
+    voiceIntro: string;
   }>;
 }
 
@@ -42,7 +49,7 @@ export async function createRadioSession(params: CreateSessionParams): Promise<S
   const userId = 443961717;
   const totalStart = Date.now();
 
-  // 1. 召回候选歌曲
+  // 1. 召回用户曲库候选歌曲
   let t = Date.now();
   const scored = recallCandidates(userId, {
     scene: params.scene,
@@ -63,8 +70,19 @@ export async function createRadioSession(params: CreateSessionParams): Promise<S
     extraPrompt: params.extraPrompt,
   });
   const musicProfile = buildMusicProfile(userId);
-  const candidates = formatCandidatesForClaude(scored);
   console.log(`[Radio] 上下文构建 ${Date.now() - t}ms`);
+
+  // 2.5 主动探索少量新歌，让电台不只局限在用户原始歌单里。
+  t = Date.now();
+  const exploreScored = await recallExploreCandidates(userId, {
+    scene: params.scene,
+    mood: params.mood,
+    musicProfile,
+    limit: 6,
+  });
+  const mergedScored = mergeRadioCandidates(scored, exploreScored);
+  const candidates = formatCandidatesForClaude(mergedScored);
+  console.log(`[Radio] 探索推荐 ${Date.now() - t}ms，新增候选 ${exploreScored.length} 首，合并候选 ${mergedScored.length} 首`);
 
   // 3. 调用 Claude
   t = Date.now();
@@ -86,21 +104,24 @@ export async function createRadioSession(params: CreateSessionParams): Promise<S
         );
       } catch {
         console.warn('[Radio] 重试失败，进入 fallback 模式');
-        claudeResult = buildFallbackResult(scored, params);
+        claudeResult = buildFallbackResult(mergedScored, params);
         isFallback = true;
       }
     } else {
       // 模型不可用，进入 fallback 模式
       console.warn('[Radio] Claude 调用失败，进入 fallback 模式:', err.message);
-      claudeResult = buildFallbackResult(scored, params);
+      claudeResult = buildFallbackResult(mergedScored, params);
       isFallback = true;
     }
   }
 
   // 4. 后端校验
   t = Date.now();
-  const validated = validateClaudeResult(claudeResult, scored);
+  const validated = validateClaudeResult(claudeResult, mergedScored, params);
   console.log(`[Radio] 校验完成 ${Date.now() - t}ms，有效歌曲 ${validated.tracks.length} 首${isFallback ? ' (fallback)' : ''}`);
+
+  // 4.5 刷新播放地址（CDN 链接过期后需要重新获取）
+  await refreshPlayUrlsForTracks(validated.tracks);
 
   // 5. 保存到数据库
   t = Date.now();
@@ -116,6 +137,7 @@ export async function createRadioSession(params: CreateSessionParams): Promise<S
     fallback: isFallback || undefined,
     tracks: validated.tracks.map((t: any) => ({
       trackId: t.trackId,
+      sourceTrackId: t.sourceTrackId,
       title: t.title,
       artist: t.artist,
       album: t.album,
@@ -124,6 +146,7 @@ export async function createRadioSession(params: CreateSessionParams): Promise<S
       djScript: t.djScript,
       recommendReason: t.recommendReason,
       segue: t.segue,
+      voiceIntro: t.voiceIntro,
     })),
   };
 }
@@ -131,7 +154,7 @@ export async function createRadioSession(params: CreateSessionParams): Promise<S
 /**
  * 校验 Claude 返回结果
  */
-function validateClaudeResult(result: any, scored: any[]): any {
+function validateClaudeResult(result: any, scored: any[], params: CreateSessionParams): any {
   // 构建候选集 ID 映射
   const candidateMap = new Map<number, any>();
   for (const s of scored) {
@@ -144,6 +167,9 @@ function validateClaudeResult(result: any, scored: any[]): any {
   }
 
   const validTracks = [];
+  const sceneLabel = getSceneLabel(params.scene);
+  const moodLabel = params.mood || '随意';
+
   for (const t of result.tracks) {
     const trackId = Number(t.trackId);
     const track = candidateMap.get(trackId);
@@ -153,18 +179,26 @@ function validateClaudeResult(result: any, scored: any[]): any {
       continue;
     }
 
-    if (!t.djScript || t.djScript.trim() === '') {
-      t.djScript = `下一首，${track.title}`;
-    }
+    const previousTrack = validTracks.length > 0 ? candidateMap.get(validTracks[validTracks.length - 1].trackId) : null;
+    const enrichedCopy: typeof t = enrichTrackCopyIfNeeded(t, track, {
+      index: validTracks.length,
+      reason: scored.find(s => s.track.id === trackId)?.reason,
+      sceneLabel,
+      moodLabel,
+      previousTrack,
+      sourceScope: scored.find(s => s.track.id === trackId)?.sourceScope,
+    });
 
     validTracks.push({
-      ...t,
+      ...enrichedCopy,
       trackId,
+      sourceTrackId: track.source_track_id,
       title: track.title,
-      artist: track.artists,
+      artist: track.artist,
       album: track.album,
       coverUrl: track.cover_url,
       playUrl: track.play_url,
+      voiceIntro: buildTrackVoiceIntro(enrichedCopy),
     });
   }
 
@@ -174,7 +208,9 @@ function validateClaudeResult(result: any, scored: any[]): any {
 
   return {
     sessionTitle: result.sessionTitle || '私人电台',
-    say: result.say || '',
+    say: result.say && String(result.say).trim().length >= 40
+      ? result.say
+      : buildOpeningCopy(params, validTracks.length),
     summary: result.summary || '',
     tracks: validTracks.slice(0, 20),
   };
@@ -220,27 +256,95 @@ function saveSession(
 }
 
 /**
+ * 刷新会话中歌曲的播放地址
+ * 网易云 CDN 链接有时效性，过期后需重新获取
+ */
+async function refreshPlayUrlsForTracks(tracks: any[]): Promise<void> {
+  const COOKIE_FILE = path.resolve(__dirname, '../../data/netease-cookie.txt');
+  if (!fs.existsSync(COOKIE_FILE)) {
+    console.warn('[Radio] 无网易云 cookie，跳过播放地址刷新');
+    return;
+  }
+
+  // 刷新所有歌曲的播放地址（CDN 链接有时效性，可能已过期）
+  const needRefresh = tracks;
+  if (needRefresh.length === 0) return;
+
+  const cookie = fs.readFileSync(COOKIE_FILE, 'utf-8').trim();
+  const sourceIds = tracks.map(t => Number(t.sourceTrackId)).filter(id => !isNaN(id));
+  if (sourceIds.length === 0) return;
+
+  console.log(`[Radio] 刷新 ${sourceIds.length} 首歌的播放地址...`);
+  try {
+    const result = await song_url({ id: sourceIds.join(','), br: 999000, cookie });
+    const urlData = (result.body?.data || []) as any[];
+    const urlMap = new Map<number, string>();
+    for (const item of urlData) {
+      if (item.url) urlMap.set(item.id, item.url);
+    }
+
+    // 更新内存中的 tracks
+    for (const t of tracks) {
+      const url = urlMap.get(Number(t.sourceTrackId));
+      if (url) {
+        t.playUrl = url;
+        // 同步更新数据库
+        db.prepare('UPDATE radio_track SET play_url = ? WHERE source_track_id = ?').run(url, String(t.sourceTrackId));
+      }
+    }
+    console.log(`[Radio] 播放地址刷新完成: ${urlMap.size}/${sourceIds.length} 成功`);
+  } catch (err: any) {
+    console.error('[Radio] 刷新播放地址失败:', err.message);
+  }
+}
+
+/**
  * 构建 fallback 结果（模型不可用时的本地编排）
  * 直接取召回 top 10，用模板生成文案
  */
 function buildFallbackResult(scored: any[], params: CreateSessionParams): any {
   const top = scored.slice(0, 10);
-  const sceneLabel = params.scene === 'coding' ? '编码'
-    : params.scene === 'working' ? '工作'
-    : params.scene === 'relaxing' ? '放松'
-    : params.scene === 'sleeping' ? '入眠'
-    : '日常';
+  const sceneLabel = getSceneLabel(params.scene);
   const moodLabel = params.mood || '随意';
 
   return {
     sessionTitle: `${sceneLabel}电台 · ${moodLabel}模式`,
-    summary: '本地编排模式，基于你的听歌习惯自动生成。',
-    say: `${sceneLabel}时间到了，为你准备了几首歌，慢慢听。`,
-    tracks: top.map((s, i) => ({
-      trackId: s.track.id,
-      djScript: i === 0 ? '开始播放。' : `下一首，${s.track.title}。`,
-      recommendReason: s.reason || '为你推荐',
-      segue: i === 0 ? '开场' : '继续',
-    })),
+    summary: `本地编排模式，基于你的听歌习惯为${sceneLabel}和“${moodLabel}”状态组织一组歌。`,
+    say: buildOpeningCopy(params, top.length),
+    tracks: top.map((s, i) => {
+      const previous = i > 0 ? top[i - 1].track : null;
+      return {
+        trackId: s.track.id,
+        ...buildFallbackTrackCopy(s.track, {
+          index: i,
+          reason: s.reason,
+          sceneLabel,
+          moodLabel,
+          previousTrack: previous,
+          sourceScope: s.sourceScope,
+        }),
+      };
+    }),
   };
+}
+
+/**
+ * 合并本地曲库候选和主动探索候选。
+ * 探索歌曲只占少量位置，保证有新鲜感但不破坏用户原有品味。
+ */
+function mergeRadioCandidates(libraryScored: any[], exploreScored: any[]): any[] {
+  const selected: any[] = [];
+  const seen = new Set<number>();
+
+  const pushUnique = (item: any) => {
+    if (!item?.track?.id || seen.has(item.track.id)) return;
+    seen.add(item.track.id);
+    selected.push(item);
+  };
+
+  libraryScored.slice(0, 24).forEach(pushUnique);
+  exploreScored.slice(0, 6).forEach(pushUnique);
+  libraryScored.slice(24, 100).forEach(pushUnique);
+
+  return selected.slice(0, 100);
 }

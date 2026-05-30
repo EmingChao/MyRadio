@@ -14,8 +14,13 @@ import deviceRouter from './api/device';
 import { wsManager } from './ws/manager';
 import { errorHandler } from './middleware/error-handler';
 import { startScheduler } from './services/scheduler';
+import { initDb } from './stores/init-db';
+import { getWeatherSummary } from './services/weather';
 
 dotenv.config();
+
+// 服务启动前先执行数据库初始化和轻量迁移，避免旧库缺字段导致接口恢复失败。
+initDb();
 
 const app = express();
 const PORT = process.env.PORT || 8080;
@@ -80,4 +85,6 @@ server.listen(PORT, () => {
   console.log(`My Radio 服务已启动: http://localhost:${PORT}`);
   console.log(`WebSocket 已启动: ws://localhost:${PORT}/ws`);
   startScheduler();
+  // 预热天气缓存，避免首次创建会话时等待网络请求
+  getWeatherSummary().then(w => console.log(`[Weather] 缓存预热完成: ${w}`)).catch(() => {});
 });

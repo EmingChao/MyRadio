@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onUnmounted, provide } from 'vue'
 import { usePlayerStore } from '../stores/player'
 import { createRadioSession } from '../api'
+import { useMediaKeyboardControls } from '../composables/media-keyboard-controls'
 import { useWebSocket } from '../composables/useWebSocket'
 import type { WsEvent } from '../composables/useWebSocket'
 import type { RadioTrack } from '../stores/player'
@@ -20,6 +21,7 @@ import SongDetailDrawer from '../components/SongDetailDrawer.vue'
 
 const store = usePlayerStore()
 const { onEvent, offEvent } = useWebSocket()
+useMediaKeyboardControls()
 
 // 创建表单状态
 const scene = ref('coding')
@@ -271,8 +273,10 @@ function handleTabChange(tab: string) {
   width: 100%;
   height: 100vh;
   background:
-    radial-gradient(ellipse at 50% 0%, rgba(55, 214, 122, 0.04), transparent 45%),
-    linear-gradient(180deg, #0b1110 0%, var(--stage-black) 40%, #020303 100%);
+    radial-gradient(circle at 48% 12%, rgba(200, 111, 61, 0.13), transparent 28%),
+    radial-gradient(ellipse at 50% 0%, rgba(56, 217, 120, 0.035), transparent 42%),
+    radial-gradient(circle at 78% 86%, rgba(93, 117, 155, 0.1), transparent 32%),
+    linear-gradient(180deg, #11151d 0%, var(--stage-black) 52%, #040507 100%);
   display: flex;
   justify-content: center;
   align-items: center;
@@ -283,16 +287,50 @@ function handleTabChange(tab: string) {
 .phone-shell {
   width: 390px;
   height: 844px;
-  background: var(--stage-black);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background:
+    radial-gradient(circle at 50% -4%, rgba(244, 239, 228, 0.055), transparent 24%),
+    radial-gradient(circle at 12% 28%, rgba(200, 111, 61, 0.08), transparent 28%),
+    linear-gradient(180deg, rgba(13, 16, 22, 0.96), var(--stage-black) 46%, #090a0d 100%);
+  border: 1px solid rgba(244, 239, 228, 0.085);
   border-radius: 32px;
   overflow: hidden;
   display: flex;
   flex-direction: column;
   position: relative;
   box-shadow:
-    0 0 80px rgba(55, 214, 122, 0.03),
-    0 0 0 1px rgba(255, 255, 255, 0.02);
+    0 28px 120px rgba(0, 0, 0, 0.58),
+    0 0 70px rgba(200, 111, 61, 0.08),
+    0 0 0 1px rgba(255, 255, 255, 0.018);
+}
+
+.phone-shell::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.012) 1px, transparent 1px);
+  background-size: 100% 42px, 42px 100%;
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.48), transparent 48%);
+  opacity: 0.42;
+  pointer-events: none;
+}
+
+.phone-shell::after {
+  content: '';
+  position: absolute;
+  left: 18px;
+  right: 18px;
+  top: 64px;
+  height: 210px;
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at 50% 40%, rgba(216, 181, 106, 0.12), transparent 58%),
+    radial-gradient(circle at 16% 52%, rgba(56, 217, 120, 0.055), transparent 45%);
+  filter: blur(22px);
+  opacity: 0.75;
+  animation: ambient-drift 12s ease-in-out infinite;
+  pointer-events: none;
 }
 
 .phone-shell.is-mobile {
@@ -308,6 +346,8 @@ function handleTabChange(tab: string) {
 .stage-area {
   flex-shrink: 0;
   overflow: hidden;
+  position: relative;
+  z-index: 1;
 }
 
 /* ===== DJ Feed 聊天流 ===== */
@@ -317,6 +357,11 @@ function handleTabChange(tab: string) {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  margin-top: -10px;
+  padding-top: 10px;
+  position: relative;
+  z-index: 2;
+  background: linear-gradient(180deg, rgba(9, 10, 13, 0), rgba(9, 10, 13, 0.34) 18px, rgba(9, 10, 13, 0) 54px);
 }
 
 /* ===== Command Dock ===== */
@@ -324,9 +369,11 @@ function handleTabChange(tab: string) {
   flex-shrink: 0;
   padding: 6px 12px 4px;
   border-top: 1px solid var(--line);
-  background: rgba(16, 18, 20, 0.85);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  background: rgba(10, 12, 16, 0.78);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  position: relative;
+  z-index: 1;
 }
 
 .dock-chips {
@@ -337,7 +384,7 @@ function handleTabChange(tab: string) {
 
 .chip {
   padding: 3px 10px;
-  background: var(--surface);
+  background: rgba(244, 239, 228, 0.045);
   border: 1px solid var(--line);
   border-radius: 16px;
   font-family: var(--font-mono);
@@ -349,9 +396,9 @@ function handleTabChange(tab: string) {
 }
 
 .chip:hover, .chip.active {
-  background: var(--signal-dim);
-  border-color: rgba(55, 214, 122, 0.3);
-  color: var(--signal);
+  background: rgba(241, 233, 216, 0.1);
+  border-color: rgba(56, 217, 120, 0.24);
+  color: var(--text-primary);
 }
 
 .create-dock {
@@ -368,7 +415,7 @@ function handleTabChange(tab: string) {
 .dock-input {
   flex: 1;
   padding: 7px 10px;
-  background: var(--surface);
+  background: rgba(244, 239, 228, 0.05);
   border: 1px solid var(--line);
   border-radius: 8px;
   color: var(--text-primary);
@@ -383,13 +430,13 @@ function handleTabChange(tab: string) {
 }
 
 .dock-input:focus {
-  border-color: rgba(55, 214, 122, 0.3);
+  border-color: rgba(216, 181, 106, 0.34);
 }
 
 .dock-send {
   padding: 7px 14px;
-  background: var(--signal-dim);
-  border: 1px solid rgba(55, 214, 122, 0.25);
+  background: rgba(56, 217, 120, 0.11);
+  border: 1px solid rgba(56, 217, 120, 0.22);
   border-radius: 8px;
   color: var(--signal);
   font-family: var(--font-brand);
@@ -400,7 +447,7 @@ function handleTabChange(tab: string) {
 }
 
 .dock-send:hover:not(:disabled) {
-  background: rgba(55, 214, 122, 0.25);
+  background: rgba(56, 217, 120, 0.18);
 }
 
 .dock-send:disabled {
