@@ -200,7 +200,7 @@ export function upsertExploreTracks(params: UpsertExploreParams): ExploreCandida
       params.existingSourceIds.add(song.sourceTrackId);
       stored.push({
         track,
-        score: 18,
+        score: 26,
         reason: params.reasonHint || '主动探索：根据你的品味延展推荐的新歌',
         sourceScope: 'explore',
       });

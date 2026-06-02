@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { synthesizeSpeech, getTtsFilePath, getTextHash } from '../services/tts';
+import { resolveTtsStyle } from '../services/tts-style';
 
 const router = Router();
 
@@ -10,22 +11,24 @@ const router = Router();
  */
 router.post('/synthesize', async (req, res) => {
   try {
-    const { text } = req.body;
+    const { text, context } = req.body;
     if (!text || typeof text !== 'string') {
       return res.status(400).json({ code: 400, message: '缺少 text 参数' });
     }
 
-    const filePath = await synthesizeSpeech(text);
+    const style = resolveTtsStyle(context || {});
+    const filePath = await synthesizeSpeech(text, style);
     if (!filePath) {
       return res.json({ code: 0, data: { hash: null, audioUrl: null } });
     }
 
-    const hash = getTextHash(text);
+    const hash = getTextHash(text, style);
     res.json({
       code: 0,
       data: {
         hash,
         audioUrl: `/api/tts/audio/${hash}`,
+        style,
       },
     });
   } catch (err: any) {

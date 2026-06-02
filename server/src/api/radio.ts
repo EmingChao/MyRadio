@@ -2,11 +2,12 @@ import { Router } from 'express';
 import fs from 'fs';
 import path from 'path';
 import db from '../stores/db';
-import { createRadioSession } from '../agent/radio';
+import { continueRadioSession, createRadioSession } from '../agent/radio';
 import { getSession, getRecentSession, getSessionTracksWithDetail, updateTrackPlayStatus } from '../stores/session';
 import { incrementPlayCount, incrementSkipCount } from '../stores/track';
 import { autoUpdateProfile } from '../stores/profile';
 import { synthesizeSpeech, getTextHash } from '../services/tts';
+import { resolveTtsStyle } from '../services/tts-style';
 import { wsManager } from '../ws/manager';
 import { getCurrentSceneAndMood } from '../services/daily-plan';
 import { song_url } from 'NeteaseCloudMusicApi';
@@ -56,35 +57,84 @@ router.post('/session/create-from-plan', async (req, res) => {
 });
 
 /**
+ * POST /api/radio/session/:id/continue — 为当前会话追加续播队列
+ * Body: { limit?: number }
+ */
+router.post('/session/:id/continue', async (req, res) => {
+  try {
+    const sessionId = Number(req.params.id);
+    const limit = Math.max(5, Math.min(10, Number(req.body?.limit || 8)));
+    const appendedTracks = await continueRadioSession(sessionId, limit);
+
+    res.json({ code: 0, data: { appendedTracks } });
+
+    generateTtsForSession(sessionId, '', appendedTracks).catch(err => {
+      console.error('[TTS] 续播后台生成失败:', err.message);
+    });
+
+    wsManager.broadcast(sessionId, {
+      type: 'QUEUE_UPDATED',
+      data: { sessionId, tracks: appendedTracks, append: true },
+    });
+  } catch (err: any) {
+    console.error('续播队列失败:', err);
+    res.status(500).json({ code: 500, message: err.message || '续播队列失败' });
+  }
+});
+
+/**
  * 异步生成会话的 TTS 音频
  * 只对 say（开场白）和 voiceIntro（歌曲前完整独白）做 TTS
  */
 async function generateTtsForSession(
   sessionId: number,
   say: string,
-  tracks: Array<{ trackId: number; segue: string; voiceIntro?: string }>
+  tracks: Array<{ trackId: number; title?: string; artist?: string; segue: string; voiceIntro?: string }>
 ) {
-  const textsToSynthesize: string[] = [];
+  const session = getSession(sessionId) as any;
+  const scene = session?.scene || session?.sceneLabel || session?.radioScene;
+  const mood = session?.mood || session?.radioMood;
+  const textsToSynthesize: Array<{
+    text: string;
+    style: ReturnType<typeof resolveTtsStyle>;
+  }> = [];
 
   // 收集需要合成的文本
-  if (say) textsToSynthesize.push(say);
+  if (say) {
+    textsToSynthesize.push({
+      text: say,
+      style: resolveTtsStyle({ scene, mood, isOpening: true }),
+    });
+  }
   for (const track of tracks) {
     const spokenText = track.voiceIntro || track.segue;
-    if (spokenText) textsToSynthesize.push(spokenText);
+    if (spokenText) {
+      textsToSynthesize.push({
+        text: spokenText,
+        style: resolveTtsStyle({
+          scene,
+          mood,
+          title: track.title,
+          artist: track.artist,
+        }),
+      });
+    }
   }
 
   console.log(`[TTS] 开始生成 ${textsToSynthesize.length} 段语音...`);
 
   // 逐个合成（避免并发过多）
-  const results: Array<{ text: string; hash: string; audioUrl: string }> = [];
-  for (const text of textsToSynthesize) {
+  const results: Array<{ text: string; hash: string; audioUrl: string; style: ReturnType<typeof resolveTtsStyle> }> = [];
+  for (const item of textsToSynthesize) {
     try {
-      const filePath = await synthesizeSpeech(text);
+      const filePath = await synthesizeSpeech(item.text, item.style);
       if (filePath) {
+        const hash = getTextHash(item.text, item.style);
         results.push({
-          text,
-          hash: getTextHash(text),
-          audioUrl: `/api/tts/audio/${getTextHash(text)}`,
+          text: item.text,
+          hash,
+          audioUrl: `/api/tts/audio/${hash}`,
+          style: item.style,
         });
       }
     } catch {

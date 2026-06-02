@@ -31,7 +31,20 @@ interface SessionTrack {
  * 获取会话信息
  */
 export function getSession(sessionId: number): Session | undefined {
-  return db.prepare('SELECT * FROM radio_session WHERE id = ?').get(sessionId) as Session | undefined;
+  return db.prepare(`
+    SELECT
+      id,
+      user_id AS userId,
+      session_title AS sessionTitle,
+      scene,
+      mood,
+      weather_summary AS weatherSummary,
+      calendar_summary AS calendarSummary,
+      ai_summary AS aiSummary,
+      create_time AS createTime
+    FROM radio_session
+    WHERE id = ?
+  `).get(sessionId) as Session | undefined;
 }
 
 /**
@@ -39,7 +52,16 @@ export function getSession(sessionId: number): Session | undefined {
  */
 export function getSessionTracks(sessionId: number): SessionTrack[] {
   return db.prepare(`
-    SELECT * FROM radio_session_track
+    SELECT
+      id,
+      session_id AS sessionId,
+      track_id AS trackId,
+      sort_no AS sortNo,
+      dj_script AS djScript,
+      recommend_reason AS recommendReason,
+      play_status AS playStatus,
+      segue
+    FROM radio_session_track
     WHERE session_id = ?
     ORDER BY sort_no ASC
   `).all(sessionId) as SessionTrack[];
@@ -91,7 +113,17 @@ export function updateTrackPlayStatus(sessionId: number, trackId: number, status
  */
 export function getRecentSession(userId: number): Session | undefined {
   return db.prepare(`
-    SELECT * FROM radio_session
+    SELECT
+      id,
+      user_id AS userId,
+      session_title AS sessionTitle,
+      scene,
+      mood,
+      weather_summary AS weatherSummary,
+      calendar_summary AS calendarSummary,
+      ai_summary AS aiSummary,
+      create_time AS createTime
+    FROM radio_session
     WHERE user_id = ?
     ORDER BY create_time DESC
     LIMIT 1

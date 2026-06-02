@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, provide } from 'vue'
+import { ref, computed, onMounted, onUnmounted, provide, watch } from 'vue'
 import { usePlayerStore } from '../stores/player'
 import { createRadioSession } from '../api'
 import { useMediaKeyboardControls } from '../composables/media-keyboard-controls'
 import { useWebSocket } from '../composables/useWebSocket'
+import { useCoverBg } from '../composables/useCoverBg'
 import type { WsEvent } from '../composables/useWebSocket'
 import type { RadioTrack } from '../stores/player'
-import ClaudioHeader from '../components/ClaudioHeader.vue'
+import MyRadioHeader from '../components/MyRadioHeader.vue'
 import RadioPlayer from '../components/RadioPlayer.vue'
 import DjChat from '../components/DjChat.vue'
 import TrackQueue from '../components/TrackQueue.vue'
@@ -21,6 +22,7 @@ import SongDetailDrawer from '../components/SongDetailDrawer.vue'
 
 const store = usePlayerStore()
 const { onEvent, offEvent } = useWebSocket()
+const { bgStyle: globalCoverStyle } = useCoverBg()
 useMediaKeyboardControls()
 
 // 创建表单状态
@@ -29,6 +31,7 @@ const mood = ref('专注')
 const extraPrompt = ref('')
 const creating = ref(false)
 const createPhase = ref('')
+const modeOptions = ['专注', '放松', '深夜', 'BGM']
 
 // UI 状态
 const showLogin = ref(false)
@@ -37,6 +40,7 @@ const showDetail = ref(false)
 const detailTrack = ref<RadioTrack | null>(null)
 const activeTab = ref('radio')
 const toasts = ref<Array<{ id: number; message: string; type: 'info' | 'success' | 'error' }>>([])
+const theme = ref<'dark' | 'light'>(getInitialTheme())
 
 // 提供给子组件打开详情的方法
 function openDetail(track?: RadioTrack) {
@@ -61,11 +65,21 @@ function handleWsEvent(event: WsEvent) {
 onMounted(() => {
   window.addEventListener('resize', onResize)
   wsEventId = onEvent(handleWsEvent)
+  applyTheme(theme.value)
 })
 onUnmounted(() => {
   window.removeEventListener('resize', onResize)
   if (wsEventId !== null) offEvent(wsEventId)
 })
+
+watch(theme, (value) => {
+  applyTheme(value)
+  try {
+    localStorage.setItem('myradio-theme', value)
+  } catch {
+    // 忽略存储失败
+  }
+}, { immediate: true })
 
 function showToast(message: string, type: 'info' | 'success' | 'error' = 'info') {
   const id = ++toastId
@@ -77,9 +91,9 @@ function removeToast(id: number) {
 }
 
 const btnText = computed(() => {
-  if (!creating.value) return 'START CLAUDIO'
+  if (!creating.value) return '开启 MyRadio'
   if (createPhase.value) return createPhase.value
-  return 'GENERATING...'
+  return '正在生成...'
 })
 
 // 时段切换通知
@@ -99,6 +113,7 @@ async function handleAcceptSlotChange() {
 }
 
 async function handleCreate() {
+  if (creating.value) return
   creating.value = true
   createPhase.value = '召回曲库...'
   try {
@@ -126,8 +141,40 @@ async function handleCreate() {
   }
 }
 
+async function handleMoodShortcut(nextMood: string) {
+  if (creating.value) return
+  mood.value = nextMood
+  showToast(`切换到${nextMood}模式，重新编排电台`, 'info')
+  if (store.session) {
+    store.clearSession()
+  }
+  await handleCreate()
+}
+
 function handleTabChange(tab: string) {
   activeTab.value = tab
+}
+
+function getInitialTheme(): 'dark' | 'light' {
+  try {
+    const saved = localStorage.getItem('myradio-theme')
+    if (saved === 'light' || saved === 'dark') return saved
+  } catch {
+    // 忽略存储读取失败
+  }
+  return window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
+}
+
+function applyTheme(value: 'dark' | 'light') {
+  document.documentElement.dataset.theme = value
+}
+
+function toggleTheme() {
+  theme.value = theme.value === 'dark' ? 'light' : 'dark'
+}
+
+function setTheme(value: 'dark' | 'light') {
+  theme.value = value
 }
 </script>
 
@@ -158,9 +205,12 @@ function handleTabChange(tab: string) {
     />
 
     <!-- 手机壳容器 -->
-    <div class="phone-shell" :class="{ 'is-mobile': isMobile }">
-      <!-- Claudio Header -->
-      <ClaudioHeader @settings="showSettings = true" />
+    <div class="phone-shell" :class="{ 'is-mobile': isMobile, 'has-session': !!store.session, 'is-creating': creating }">
+      <!-- 全局专辑氛围层：让播放器、独白和底部导航都跟随当前封面形成同一套磨砂背景。 -->
+      <div v-if="store.currentTrack?.coverUrl" class="global-cover-ambient" :style="globalCoverStyle" aria-hidden="true" />
+
+      <!-- MyRadio Header -->
+      <MyRadioHeader @settings="showSettings = true" />
 
       <!-- 时段切换通知条 -->
       <div v-if="store.slotChanged" class="slot-notice">
@@ -168,7 +218,7 @@ function handleTabChange(tab: string) {
           时段切换：{{ store.slotChanged.scene }} · {{ store.slotChanged.mood }}
         </span>
         <button class="slot-notice-btn" :disabled="switching" @click="handleAcceptSlotChange">
-          {{ switching ? '...' : 'SWITCH' }}
+          {{ switching ? '...' : '切换' }}
         </button>
         <button class="slot-notice-dismiss" @click="store.clearSlotChanged()">x</button>
       </div>
@@ -187,38 +237,25 @@ function handleTabChange(tab: string) {
 
         <!-- Command Dock: 输入/启动区 -->
         <div class="dock-area">
-          <!-- 有会话时：快捷心情 chips -->
-          <div v-if="store.session" class="dock-chips">
+          <!-- 模式快捷项始终保持同一组中文选项，避免切换会话时布局跳变。 -->
+          <div class="dock-chips">
             <button
-              v-for="m in ['专注', '放松', '深夜', 'BGM']"
+              v-for="m in modeOptions"
               :key="m"
               class="chip"
               :class="{ active: mood === m }"
-              @click="mood = m"
+              :disabled="creating"
+              @click="handleMoodShortcut(m)"
             >{{ m }}</button>
           </div>
 
           <!-- 无会话时：创建表单 -->
           <div v-if="!store.session" class="create-dock">
-            <div class="dock-chips">
-              <button
-                v-for="s in [
-                  { v: 'coding', l: 'CODE' },
-                  { v: 'working', l: 'WORK' },
-                  { v: 'relaxing', l: 'CHILL' },
-                  { v: 'sleeping', l: 'SLEEP' },
-                ]"
-                :key="s.v"
-                class="chip"
-                :class="{ active: scene === s.v }"
-                @click="scene = s.v"
-              >{{ s.l }}</button>
-            </div>
             <div class="dock-input-row">
               <input
                 v-model="extraPrompt"
                 class="dock-input"
-                placeholder="告诉 Claudio 你的心情..."
+                placeholder="告诉 MyRadio 你的心情..."
               />
               <button
                 class="dock-send"
@@ -250,17 +287,29 @@ function handleTabChange(tab: string) {
     </div>
 
     <!-- Settings Sheet -->
-    <BottomSheet :visible="showSettings" title="SETTINGS" @close="showSettings = false">
+    <BottomSheet :visible="showSettings" title="设置" @close="showSettings = false">
       <div class="settings-sheet">
         <div class="setting-row">
-          <span class="setting-label">DEVICE</span>
+          <span class="setting-label">播放设备</span>
           <DeviceSelector />
         </div>
+        <div class="setting-row setting-theme">
+          <span class="setting-label">主题外观</span>
+          <div class="theme-switch">
+            <button class="theme-option" :class="{ active: theme === 'dark' }" @click="setTheme('dark')">深色</button>
+            <button class="theme-option" :class="{ active: theme === 'light' }" @click="setTheme('light')">亮色</button>
+            <button class="theme-cycle" :aria-label="theme === 'dark' ? '切换到亮色主题' : '切换到暗色主题'" @click="toggleTheme">
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path d="M12 4.75a7.25 7.25 0 1 0 7.25 7.25 5.75 5.75 0 0 1-7.25-7.25Z"/>
+              </svg>
+            </button>
+          </div>
+        </div>
         <button class="setting-item" @click="showSettings = false; showLogin = true">
-          <span class="setting-label">NETEASE LOGIN</span>
+          <span class="setting-label">网易云登录</span>
         </button>
         <button v-if="store.session" class="setting-item setting-danger" @click="showSettings = false; store.clearSession()">
-          <span class="setting-label">NEW SESSION</span>
+          <span class="setting-label">重新开始电台</span>
         </button>
       </div>
     </BottomSheet>
@@ -272,35 +321,67 @@ function handleTabChange(tab: string) {
 .app-stage {
   width: 100%;
   height: 100vh;
+  min-height: 100vh;
   background:
-    radial-gradient(circle at 48% 12%, rgba(200, 111, 61, 0.13), transparent 28%),
-    radial-gradient(ellipse at 50% 0%, rgba(56, 217, 120, 0.035), transparent 42%),
-    radial-gradient(circle at 78% 86%, rgba(93, 117, 155, 0.1), transparent 32%),
-    linear-gradient(180deg, #11151d 0%, var(--stage-black) 52%, #040507 100%);
+    radial-gradient(circle at 42% 10%, var(--shell-halo-a), transparent 28%),
+    radial-gradient(ellipse at 50% -2%, rgba(241, 233, 216, 0.045), transparent 44%),
+    radial-gradient(circle at 78% 82%, var(--shell-halo-b), transparent 33%),
+    linear-gradient(180deg, var(--app-bg-1) 0%, var(--app-bg-2) 55%, var(--app-bg-3) 100%);
   display: flex;
   justify-content: center;
-  align-items: center;
-  overflow: hidden;
+  align-items: flex-start;
+  overflow: auto;
+  padding: 12px 0 16px;
 }
 
 /* ===== 手机壳 ===== */
 .phone-shell {
   width: 390px;
   height: 844px;
+  flex-shrink: 0;
   background:
-    radial-gradient(circle at 50% -4%, rgba(244, 239, 228, 0.055), transparent 24%),
-    radial-gradient(circle at 12% 28%, rgba(200, 111, 61, 0.08), transparent 28%),
-    linear-gradient(180deg, rgba(13, 16, 22, 0.96), var(--stage-black) 46%, #090a0d 100%);
-  border: 1px solid rgba(244, 239, 228, 0.085);
+    radial-gradient(circle at 50% -5%, rgba(244, 239, 228, 0.07), transparent 26%),
+    radial-gradient(circle at 14% 26%, var(--shell-halo-a), transparent 30%),
+    radial-gradient(circle at 86% 58%, var(--shell-halo-b), transparent 34%),
+    linear-gradient(180deg, var(--shell-bg-1), var(--shell-bg-2) 47%, var(--shell-bg-3) 100%);
+  border: 0;
   border-radius: 32px;
   overflow: hidden;
   display: flex;
   flex-direction: column;
   position: relative;
+  isolation: isolate;
   box-shadow:
     0 28px 120px rgba(0, 0, 0, 0.58),
-    0 0 70px rgba(200, 111, 61, 0.08),
-    0 0 0 1px rgba(255, 255, 255, 0.018);
+    0 0 82px rgba(209, 135, 79, 0.08);
+}
+
+.phone-shell > * {
+  position: relative;
+  z-index: 1;
+}
+
+.global-cover-ambient {
+  position: absolute;
+  inset: -42px;
+  z-index: 0;
+  background-size: cover;
+  background-position: center;
+  opacity: 0.7;
+  filter: blur(44px) saturate(1.38) brightness(0.48);
+  transform: scale(1.05);
+  transition: background-image 0.8s ease, opacity 0.3s ease, filter 0.3s ease;
+  pointer-events: none;
+}
+
+.global-cover-ambient::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, rgba(7, 8, 11, 0.34) 0%, rgba(7, 8, 11, 0.42) 45%, rgba(7, 8, 11, 0.72) 100%),
+    radial-gradient(circle at 50% 16%, rgba(244, 239, 228, 0.08), transparent 32%),
+    radial-gradient(circle at 48% 86%, rgba(77, 216, 141, 0.06), transparent 40%);
 }
 
 .phone-shell::before {
@@ -312,8 +393,9 @@ function handleTabChange(tab: string) {
     linear-gradient(90deg, rgba(255, 255, 255, 0.012) 1px, transparent 1px);
   background-size: 100% 42px, 42px 100%;
   mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.48), transparent 48%);
-  opacity: 0.42;
+  opacity: 0.18;
   pointer-events: none;
+  z-index: 0;
 }
 
 .phone-shell::after {
@@ -321,16 +403,29 @@ function handleTabChange(tab: string) {
   position: absolute;
   left: 18px;
   right: 18px;
-  top: 64px;
+  top: 36px;
   height: 210px;
   border-radius: 999px;
   background:
-    radial-gradient(circle at 50% 40%, rgba(216, 181, 106, 0.12), transparent 58%),
-    radial-gradient(circle at 16% 52%, rgba(56, 217, 120, 0.055), transparent 45%);
+    radial-gradient(circle at 50% 40%, rgba(216, 181, 106, 0.14), transparent 58%),
+    radial-gradient(circle at 16% 52%, rgba(77, 216, 141, 0.06), transparent 45%);
   filter: blur(22px);
-  opacity: 0.75;
+  opacity: 0.28;
   animation: ambient-drift 12s ease-in-out infinite;
   pointer-events: none;
+  z-index: 0;
+}
+
+.phone-shell.has-session::after {
+  opacity: 0.54;
+  background:
+    radial-gradient(circle at 50% 36%, rgba(216, 181, 106, 0.16), transparent 56%),
+    radial-gradient(circle at 20% 46%, rgba(77, 216, 141, 0.07), transparent 42%);
+}
+
+.phone-shell.is-creating::after {
+  opacity: 1;
+  animation-duration: 8s;
 }
 
 .phone-shell.is-mobile {
@@ -348,38 +443,55 @@ function handleTabChange(tab: string) {
   overflow: hidden;
   position: relative;
   z-index: 1;
+  padding: 0;
 }
 
 /* ===== DJ Feed 聊天流 ===== */
 .feed-area {
-  flex: 1;
+  flex: 1 1 auto;
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  justify-content: flex-end;
   min-height: 0;
-  margin-top: -10px;
-  padding-top: 10px;
+  margin-top: -6px;
+  padding: 8px 12px 6px;
   position: relative;
   z-index: 2;
-  background: linear-gradient(180deg, rgba(9, 10, 13, 0), rgba(9, 10, 13, 0.34) 18px, rgba(9, 10, 13, 0) 54px);
+  background:
+    linear-gradient(180deg, rgba(8, 9, 13, 0), rgba(8, 9, 13, 0.18) 18px, rgba(8, 9, 13, 0.28) 100%);
 }
 
 /* ===== Command Dock ===== */
 .dock-area {
   flex-shrink: 0;
-  padding: 6px 12px 4px;
-  border-top: 1px solid var(--line);
-  background: rgba(10, 12, 16, 0.78);
+  margin: 0 12px;
+  padding: 7px 10px 6px;
+  border-top: 1px solid rgba(244, 239, 228, 0.028);
+  border-left: 0;
+  border-right: 0;
+  border-radius: 14px 14px 0 0;
+  background:
+    linear-gradient(180deg, rgba(17, 20, 26, 0.54), rgba(7, 8, 11, 0.76));
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
   position: relative;
   z-index: 1;
+  box-shadow:
+    inset 0 1px 0 rgba(244, 239, 228, 0.03),
+    0 -8px 18px rgba(0, 0, 0, 0.08);
 }
 
 .dock-chips {
   display: flex;
-  gap: 5px;
-  margin-bottom: 6px;
+  gap: 6px;
+  margin-bottom: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.dock-chips::-webkit-scrollbar {
+  display: none;
 }
 
 .chip {
@@ -401,6 +513,11 @@ function handleTabChange(tab: string) {
   color: var(--text-primary);
 }
 
+.chip:disabled {
+  opacity: 0.42;
+  cursor: wait;
+}
+
 .create-dock {
   display: flex;
   flex-direction: column;
@@ -414,13 +531,13 @@ function handleTabChange(tab: string) {
 
 .dock-input {
   flex: 1;
-  padding: 7px 10px;
-  background: rgba(244, 239, 228, 0.05);
-  border: 1px solid var(--line);
-  border-radius: 8px;
+  padding: 10px 12px;
+  background: rgba(244, 239, 228, 0.045);
+  border: 1px solid rgba(244, 239, 228, 0.08);
+  border-radius: 10px;
   color: var(--text-primary);
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 11px;
   outline: none;
   transition: border-color 0.15s;
 }
@@ -434,13 +551,13 @@ function handleTabChange(tab: string) {
 }
 
 .dock-send {
-  padding: 7px 14px;
-  background: rgba(56, 217, 120, 0.11);
-  border: 1px solid rgba(56, 217, 120, 0.22);
-  border-radius: 8px;
+  padding: 10px 14px;
+  background: linear-gradient(180deg, rgba(56, 217, 120, 0.15), rgba(56, 217, 120, 0.09));
+  border: 1px solid rgba(56, 217, 120, 0.24);
+  border-radius: 10px;
   color: var(--signal);
   font-family: var(--font-brand);
-  font-size: 14px;
+  font-size: 13px;
   letter-spacing: 1px;
   white-space: nowrap;
   transition: all 0.15s;
@@ -460,6 +577,21 @@ function handleTabChange(tab: string) {
   flex: 1;
   overflow-y: auto;
   min-height: 0;
+  padding: 44px 12px 0;
+  position: relative;
+  z-index: 1;
+  background:
+    linear-gradient(180deg, rgba(8, 9, 13, 0.14), rgba(8, 9, 13, 0) 92px);
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-m) transparent;
+}
+
+.tab-content::-webkit-scrollbar {
+  width: 2px;
+}
+
+.tab-content::-webkit-scrollbar-thumb {
+  background: var(--line-m);
 }
 
 /* ===== 时段切换通知 ===== */
@@ -468,8 +600,9 @@ function handleTabChange(tab: string) {
   align-items: center;
   gap: 8px;
   padding: 6px 16px;
-  background: var(--warm-glow);
-  border-bottom: 1px solid var(--warm-dim);
+  background:
+    linear-gradient(180deg, rgba(216, 181, 106, 0.09), rgba(10, 12, 16, 0.78));
+  border-bottom: 1px solid rgba(216, 181, 106, 0.16);
   flex-shrink: 0;
 }
 
@@ -483,9 +616,9 @@ function handleTabChange(tab: string) {
 
 .slot-notice-btn {
   padding: 2px 8px;
-  background: var(--warm-dim);
-  border: 1px solid var(--warm);
-  color: var(--stage-black);
+  background: rgba(216, 181, 106, 0.12);
+  border: 1px solid rgba(216, 181, 106, 0.36);
+  color: var(--paper);
   font-family: var(--font-mono);
   font-size: 9px;
   letter-spacing: 1px;
@@ -494,7 +627,7 @@ function handleTabChange(tab: string) {
 }
 
 .slot-notice-btn:hover:not(:disabled) {
-  background: var(--warm);
+  background: rgba(216, 181, 106, 0.2);
 }
 
 .slot-notice-btn:disabled {
@@ -506,7 +639,7 @@ function handleTabChange(tab: string) {
   padding: 0 4px;
   background: transparent;
   border: none;
-  color: var(--warm);
+  color: rgba(216, 181, 106, 0.74);
   font-size: 14px;
   cursor: pointer;
   line-height: 1;
@@ -516,25 +649,81 @@ function handleTabChange(tab: string) {
 .settings-sheet {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 8px;
 }
 
-.setting-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 12px;
-  background: var(--surface);
-  border: 1px solid var(--line);
-}
-
+.setting-row,
 .setting-item {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  min-height: 46px;
   padding: 10px 12px;
-  background: var(--surface);
+  background:
+    linear-gradient(180deg, rgba(244, 239, 228, 0.055), rgba(244, 239, 228, 0.026)),
+    var(--surface);
   border: 1px solid var(--line);
+  border-radius: 14px;
   color: var(--text-secondary);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
+}
+
+.setting-theme {
+  gap: 12px;
+}
+
+.theme-switch {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.theme-option {
+  min-width: 48px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(244, 239, 228, 0.035);
+  color: var(--text-3);
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0;
+  transition: all 0.16s ease;
+}
+
+.theme-option.active {
+  color: var(--paper);
+  border-color: rgba(216, 181, 106, 0.32);
+  background: linear-gradient(180deg, rgba(216, 181, 106, 0.14), rgba(216, 181, 106, 0.08));
+  box-shadow: 0 0 0 1px rgba(216, 181, 106, 0.06);
+}
+
+.theme-cycle {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: rgba(244, 239, 228, 0.035);
+  color: var(--text-2);
+  transition: all 0.16s ease;
+}
+
+.theme-cycle svg {
+  width: 12px;
+  height: 12px;
+  fill: currentColor;
+}
+
+.theme-cycle:hover {
+  color: var(--text-primary);
+  border-color: rgba(216, 181, 106, 0.28);
+}
+
+.setting-item {
   font-size: 14px;
   transition: all 0.15s;
   width: 100%;
@@ -551,19 +740,31 @@ function handleTabChange(tab: string) {
 }
 
 .setting-label {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: 1px;
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 0;
 }
 
 /* ===== 移动端适配 ===== */
 @media (max-width: 768px) {
   .app-stage {
     align-items: flex-start;
+    padding: 0;
+    overflow: hidden;
   }
 
   .dock-area {
-    padding: 6px 10px 4px;
+    margin: 0 10px;
+    padding: 8px 10px 6px;
+  }
+}
+
+@media (min-height: 900px) {
+  .app-stage {
+    align-items: flex-start;
+    overflow: hidden;
+    padding: 0;
   }
 }
 </style>

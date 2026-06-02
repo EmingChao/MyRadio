@@ -18,11 +18,31 @@ export function isTypingTarget(target: EventTarget | null): boolean {
 export type KeyboardPlayerAction = 'toggle' | 'next' | 'prev'
 
 /**
+ * 判断是否是系统媒体键或浏览器里常见的媒体按键码。
+ */
+function isMediaKey(event: Pick<KeyboardEvent, 'code' | 'key'>): boolean {
+  return event.code === 'F7'
+    || event.code === 'F8'
+    || event.code === 'F9'
+    || event.code === 'MediaPlayPause'
+    || event.code === 'MediaTrackNext'
+    || event.code === 'MediaTrackPrevious'
+    || event.key === 'MediaPlayPause'
+    || event.key === 'MediaTrackNext'
+    || event.key === 'MediaTrackPrevious'
+}
+
+/**
  * 将页面内快捷键解析成播放器动作。
  */
-export function resolveKeyboardPlayerAction(event: Pick<KeyboardEvent, 'code' | 'target'>): KeyboardPlayerAction | null {
-  if (isTypingTarget(event.target)) return null
+export function resolveKeyboardPlayerAction(event: Pick<KeyboardEvent, 'code' | 'key' | 'target'>): KeyboardPlayerAction | null {
+  if (isMediaKey(event)) {
+    if (event.code === 'F7' || event.code === 'MediaTrackPrevious' || event.key === 'MediaTrackPrevious') return 'prev'
+    if (event.code === 'F9' || event.code === 'MediaTrackNext' || event.key === 'MediaTrackNext') return 'next'
+    return 'toggle'
+  }
 
+  if (isTypingTarget(event.target)) return null
   if (event.code === 'Space') return 'toggle'
   if (event.code === 'ArrowRight') return 'next'
   if (event.code === 'ArrowLeft') return 'prev'
@@ -78,7 +98,7 @@ export function useMediaKeyboardControls() {
     navigator.mediaSession.metadata = new MediaMetadata({
       title: track.title,
       artist: track.artist,
-      album: track.album || 'Claudio Radio',
+      album: track.album || 'MyRadio',
       artwork: track.coverUrl
         ? [{ src: track.coverUrl, sizes: '512x512', type: 'image/jpeg' }]
         : [],

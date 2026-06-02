@@ -12,11 +12,11 @@ const router = Router();
  */
 router.post('/session/chat', async (req, res) => {
   try {
-    const { sessionId, message } = req.body;
+    const { sessionId, message, currentIndex } = req.body;
     if (!sessionId || !message) {
       return res.status(400).json({ code: 400, message: '缺少 sessionId 或 message' });
     }
-    const result = await handleChat(sessionId, message);
+    const result = await handleChat(sessionId, message, currentIndex);
 
     // 如果队列有变化，返回更新后的完整队列
     if (result.queueChanged) {
@@ -39,7 +39,12 @@ router.post('/session/chat', async (req, res) => {
       // 广播队列更新
       wsManager.broadcast(sessionId, {
         type: 'QUEUE_UPDATED',
-        data: { sessionId, tracks: updatedTracks },
+        data: {
+          sessionId,
+          tracks: updatedTracks,
+          soft: result.queueUpdateMode === 'soft',
+          insertedTrackIds: result.insertedTrackIds || [],
+        },
       });
     }
 

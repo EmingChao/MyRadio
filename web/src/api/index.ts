@@ -27,6 +27,14 @@ export async function createSessionFromPlan() {
   });
 }
 
+/** 为当前会话追加续播队列 */
+export async function continueRadioSession(sessionId: number, limit = 8) {
+  return request(`/radio/session/${sessionId}/continue`, {
+    method: 'POST',
+    body: JSON.stringify({ limit }),
+  });
+}
+
 /** 获取歌曲列表 */
 export async function getTrackList(params: {
   keyword?: string;
@@ -53,10 +61,10 @@ export async function getPlaylists() {
 }
 
 /** 发送聊天消息 */
-export async function sendChatMessage(sessionId: number, message: string) {
+export async function sendChatMessage(sessionId: number, message: string, currentIndex?: number) {
   return request('/radio/session/chat', {
     method: 'POST',
-    body: JSON.stringify({ sessionId, message }),
+    body: JSON.stringify({ sessionId, message, currentIndex }),
   });
 }
 
@@ -74,10 +82,10 @@ export async function reportPlayback(params: {
 }
 
 /** 合成 TTS 语音 */
-export async function synthesizeTts(text: string) {
+export async function synthesizeTts(text: string, context?: Record<string, any>) {
   return request('/tts/synthesize', {
     method: 'POST',
-    body: JSON.stringify({ text }),
+    body: JSON.stringify({ text, context }),
   });
 }
 
@@ -174,4 +182,9 @@ export async function sendDevicePlay(deviceId: number, trackUrl: string) {
 /** 获取歌曲歌词 */
 export async function getTrackLyrics(trackId: number) {
   return request(`/track/${trackId}/lyrics`);
+}
+
+/** 获取当前天气 */
+export async function getCurrentWeather() {
+  return request('/weather/current');
 }

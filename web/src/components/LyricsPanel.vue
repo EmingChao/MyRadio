@@ -43,7 +43,7 @@ const visibleLines = computed(() => {
 <template>
   <div class="lyrics-panel">
     <div v-if="!parsedLyrics.length" class="lyrics-empty">
-      <span class="lyrics-empty-text">LYRICS LOADING</span>
+      <span class="lyrics-empty-text">歌词同步中</span>
     </div>
     <div v-else class="lyrics-window">
       <div
@@ -52,7 +52,7 @@ const visibleLines = computed(() => {
         class="lyric-line"
         :class="{ active: line.index === activeIndex, past: line.index >= 0 && line.index < activeIndex }"
       >
-        {{ line.text }}
+        <span class="lyric-line-text">{{ line.text }}</span>
       </div>
     </div>
   </div>
@@ -88,6 +88,7 @@ const visibleLines = computed(() => {
   height: 100%;
   display: grid;
   grid-template-rows: repeat(5, 1fr);
+  gap: 2px;
   align-items: center;
   overflow: hidden;
 }
@@ -96,27 +97,46 @@ const visibleLines = computed(() => {
   height: 36px;
   min-height: 0;
   padding: 0 16px;
-  font-family: var(--font-body);
-  font-size: 14px;
-  font-weight: 600;
-  color: rgba(241, 233, 216, 0.28);
+  display: flex;
+  align-items: center;
+  justify-content: center;
   text-align: center;
-  line-height: 36px;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  overflow-wrap: anywhere;
-  transition: color 0.28s ease, opacity 0.28s ease;
+  transition: opacity 0.28s ease, transform 0.28s ease;
 }
 
 .lyric-line.past {
   opacity: 0.34;
 }
 
-.lyric-line.active {
-  color: rgba(241, 233, 216, 0.92);
+.lyric-line-text {
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow-wrap: anywhere;
+  font-family: var(--font-body);
   font-size: 14px;
-  font-weight: 760;
+  font-weight: 650;
+  line-height: 1.2;
+  letter-spacing: 0;
+  color: rgba(241, 233, 216, 0.3);
+  transition:
+    color 0.28s ease,
+    opacity 0.28s ease,
+    transform 0.28s ease,
+    font-size 0.28s ease,
+    font-weight 0.28s ease,
+    text-shadow 0.28s ease;
+  transform-origin: center center;
+}
+
+.lyric-line.active .lyric-line-text {
+  color: rgba(241, 233, 216, 0.94);
+  font-size: 15px;
+  font-weight: 780;
+  transform: scale(1.08);
   text-shadow: 0 0 18px rgba(216, 181, 106, 0.2);
 }
 </style>

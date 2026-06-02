@@ -49,6 +49,7 @@ export function recallCandidates(userId: number, ctx: RecallContext): ScoredTrac
 
   // 场景映射到心情
   const effectiveMood = ctx.mood || sceneRules[ctx.scene || '']?.moodMapping || '';
+  const weatherMood = getWeatherMoodWeights(ctx.weather);
 
   // 评分
   const scored: ScoredTrack[] = tracks
@@ -67,9 +68,9 @@ export function recallCandidates(userId: number, ctx: RecallContext): ScoredTrac
       let score = 0;
       const reasons: string[] = [];
 
-      // 1. 喜欢加分 (+30)
+      // 1. 喜欢加分：保留用户品味，但不能压过场景、天气和探索候选。
       if (track.liked) {
-        score += 30;
+        score += 16;
         reasons.push('喜欢');
       }
 
@@ -131,6 +132,18 @@ export function recallCandidates(userId: number, ctx: RecallContext): ScoredTrac
         reasons.push('经常跳过');
       }
 
+      // 8. 天气偏好加分 (+0~16)
+      if (weatherMood && track.genre_tags) {
+        const tags = track.genre_tags.split(',').map(t => t.trim()).filter(Boolean);
+        const weatherMatched = weatherMood.preferredGenres.some((g: string) =>
+          tags.some(t => t.includes(g) || g.includes(t))
+        );
+        if (weatherMatched) {
+          score += weatherMood.bonus;
+          reasons.push(`天气匹配${weatherMood.label}`);
+        }
+      }
+
       return {
         track,
         score,
@@ -161,14 +174,45 @@ export function formatCandidatesForClaude(scored: ScoredTrack[]) {
     title: s.track.title,
     artist: s.track.artist,
     album: s.track.album,
+    releaseYear: s.track.release_year || undefined,
     tags: [
       s.track.genre_tags,
       s.track.mood_tags,
     ].filter(Boolean).join(', ') || undefined,
     liked: s.track.liked === 1,
     sourceScope: s.sourceScope || (s.track.source_type === 'NETEASE_EXPLORE' ? 'explore' : 'library'),
+    reason: s.reason,
     sourceHint: s.sourceScope === 'explore' || s.track.source_type === 'NETEASE_EXPLORE'
       ? '主动探索候选：这首可能不在用户原歌单里，需要说明和用户品味、当前场景的连接。'
       : undefined,
   }));
+}
+
+/**
+ * 根据天气描述提取适合的音乐气质权重。
+ */
+function getWeatherMoodWeights(weather?: string): { preferredGenres: string[]; bonus: number; label: string } | null {
+  if (!weather) return null;
+
+  if (/雨|雷|降水|湿/.test(weather)) {
+    return { preferredGenres: ['氛围', '电子', 'R&B', '民谣', '慢歌', 'lofi'], bonus: 16, label: '雨天' };
+  }
+
+  if (/晴|太阳|明亮|少云/.test(weather)) {
+    return { preferredGenres: ['流行', '明亮', '独立', 'city pop', '摇滚'], bonus: 12, label: '晴天' };
+  }
+
+  if (/热|高温|闷/.test(weather)) {
+    return { preferredGenres: ['轻快', '清爽', '电子', '流行', 'chill'], bonus: 10, label: '炎热' };
+  }
+
+  if (/冷|寒|雪/.test(weather)) {
+    return { preferredGenres: ['民谣', '钢琴', '氛围', '抒情', '慢歌'], bonus: 12, label: '寒冷' };
+  }
+
+  if (/夜|晚/.test(weather)) {
+    return { preferredGenres: ['夜晚', '氛围', '电子', '爵士', 'R&B'], bonus: 10, label: '夜晚' };
+  }
+
+  return null;
 }

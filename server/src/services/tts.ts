@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import type { TtsStyle } from './tts-style';
 
 /**
  * MiMo TTS 服务（VoiceClone 模式）
@@ -49,15 +50,16 @@ function loadReferenceAudio(): string {
 /**
  * 计算文本 hash（用于缓存 key）
  */
-function textHash(text: string): string {
-  return crypto.createHash('md5').update(text).digest('hex').slice(0, 12);
+function textHash(text: string, style?: TtsStyle | null): string {
+  const styleKey = style ? `${style.preset}:${style.playbackRate}:${style.prompt}` : 'legacy';
+  return crypto.createHash('md5').update(`${styleKey}\n${text}`).digest('hex').slice(0, 12);
 }
 
 /**
  * 从缓存中获取 TTS 音频
  */
-function getCachedAudio(text: string): string | null {
-  const hash = textHash(text);
+function getCachedAudio(text: string, style?: TtsStyle | null): string | null {
+  const hash = textHash(text, style);
   const filePath = path.join(CACHE_DIR, `${hash}.wav`);
   if (fs.existsSync(filePath)) {
     return filePath;
@@ -68,8 +70,8 @@ function getCachedAudio(text: string): string | null {
 /**
  * 保存 TTS 音频到缓存
  */
-function saveToCache(text: string, audioBase64: string): string {
-  const hash = textHash(text);
+function saveToCache(text: string, audioBase64: string, style?: TtsStyle | null): string {
+  const hash = textHash(text, style);
   const filePath = path.join(CACHE_DIR, `${hash}.wav`);
   const buffer = Buffer.from(audioBase64, 'base64');
   fs.writeFileSync(filePath, buffer);
@@ -79,13 +81,13 @@ function saveToCache(text: string, audioBase64: string): string {
 /**
  * 调用 MiMo TTS API 合成语音
  */
-export async function synthesizeSpeech(text: string): Promise<string | null> {
+export async function synthesizeSpeech(text: string, style?: TtsStyle | null): Promise<string | null> {
   if (!text || text.trim().length === 0) return null;
 
   // 1. 检查缓存
-  const cached = getCachedAudio(text);
+  const cached = getCachedAudio(text, style);
   if (cached) {
-    console.log(`[TTS] 缓存命中: ${textHash(text)}`);
+    console.log(`[TTS] 缓存命中: ${textHash(text, style)}`);
     return cached;
   }
 
@@ -107,7 +109,10 @@ export async function synthesizeSpeech(text: string): Promise<string | null> {
 
   // 4. 调用 API
   try {
-    console.log(`[TTS] 合成语音: "${text.slice(0, 30)}..."`);
+    console.log(`[TTS] 合成语音(${style?.preset || 'legacy'}): "${text.slice(0, 30)}..."`);
+    const stylePrompt = style?.prompt
+      ? `${STYLE_PROMPT}，${style.prompt}，情绪=${style.emotion}，语速=${style.pace}，能量=${style.energy}`
+      : STYLE_PROMPT;
 
     const response = await fetch(TTS_API_URL, {
       method: 'POST',
@@ -118,7 +123,7 @@ export async function synthesizeSpeech(text: string): Promise<string | null> {
       body: JSON.stringify({
         model: TTS_MODEL,
         messages: [
-          { role: 'user', content: STYLE_PROMPT },
+          { role: 'user', content: stylePrompt },
           { role: 'assistant', content: text },
         ],
         audio: {
@@ -142,7 +147,7 @@ export async function synthesizeSpeech(text: string): Promise<string | null> {
     }
 
     // 5. 保存到缓存
-    const filePath = saveToCache(text, audioData);
+    const filePath = saveToCache(text, audioData, style);
     console.log(`[TTS] 合成完成，已缓存: ${path.basename(filePath)}`);
     return filePath;
   } catch (err: any) {
@@ -169,6 +174,6 @@ export function getTtsFilePath(hash: string): string | null {
 /**
  * 获取文本对应的 hash
  */
-export function getTextHash(text: string): string {
-  return textHash(text);
+export function getTextHash(text: string, style?: TtsStyle | null): string {
+  return textHash(text, style);
 }

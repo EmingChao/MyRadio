@@ -8,7 +8,6 @@ import type { RadioTrack } from '../stores/player'
 const store = usePlayerStore()
 const { bgStyle } = useCoverBg()
 const openDetail = inject<(track?: RadioTrack) => void>('openDetail', () => {})
-const waveBars = [32, 56, 42, 78, 36, 64, 48, 88, 52, 72, 38, 60, 44, 82, 50, 68, 34, 58]
 
 function formatTime(seconds: number): string {
   if (!seconds || !isFinite(seconds)) return '00:00'
@@ -26,11 +25,7 @@ const currentSetText = computed(() => {
   if (!store.session) return ''
   const summary = store.session.aiSummary?.trim()
   if (summary) return summary
-  return `Built from your taste · ${store.trackCount} tracks`
-})
-
-const currentVoiceText = computed(() => {
-  return store.currentTrack?.voiceIntro || store.currentTrack?.segue || ''
+  return `基于你的品味与当下场景编排 · ${store.trackCount} 首`
 })
 
 function handleProgressClick(e: MouseEvent) {
@@ -47,7 +42,7 @@ function handleProgressClick(e: MouseEvent) {
     <div class="stage-bg" :style="bgStyle" />
 
     <div class="set-strip">
-      <span class="set-label">Current Set</span>
+      <span class="set-label">当前电台</span>
       <span class="set-title">{{ store.session.sessionTitle }}</span>
       <span class="set-meta">{{ currentSetText }}</span>
     </div>
@@ -62,7 +57,7 @@ function handleProgressClick(e: MouseEvent) {
             alt="cover"
             class="album-cover"
           />
-          <span v-else class="album-label">ON AIR</span>
+          <span v-else class="album-label">播放中</span>
         </div>
       </div>
 
@@ -73,28 +68,12 @@ function handleProgressClick(e: MouseEvent) {
         <div v-if="store.currentTrack?.album" class="track-album">{{ store.currentTrack.album }}</div>
         <div class="track-waveform" :class="{ active: store.isPlaying }" aria-hidden="true">
           <span
-            v-for="(height, index) in waveBars"
+            v-for="(level, index) in store.trackWaveform"
             :key="index"
             class="wave-bar"
-            :style="{ height: height + '%', animationDelay: `${index * 0.055}s` }"
+            :style="{ height: `${Math.round(level * 100)}%` }"
           />
         </div>
-      </div>
-    </div>
-
-    <!-- DJ 独白 -->
-    <div class="voice-note" :class="{ empty: !currentVoiceText }">
-      <div class="voice-mark" :class="{ active: store.djSpeaking }" aria-hidden="true">
-        <span
-          v-for="(level, index) in store.djWaveform.slice(0, 8)"
-          :key="index"
-          class="voice-bar"
-          :style="{ height: `${Math.round(level * 100)}%` }"
-        />
-      </div>
-      <div class="voice-copy">
-        <span class="voice-label">Claudio</span>
-        <span class="voice-text">{{ currentVoiceText }}</span>
       </div>
     </div>
 
@@ -114,33 +93,55 @@ function handleProgressClick(e: MouseEvent) {
 
     <!-- 控制按钮 -->
     <div class="controls">
-      <button class="ctrl" :disabled="store.currentIndex <= 0" @click="store.prev()">|&lt;</button>
-      <button class="ctrl ctrl-play" @click="store.togglePlay()">
-        {{ store.isPlaying ? '||' : '&#9654;' }}
+      <button class="ctrl" :disabled="store.currentIndex <= 0" aria-label="上一首" @click="store.prev()">
+        <img class="ctrl-icon" src="/player-icons/prev.png" alt="" aria-hidden="true" />
       </button>
-      <button class="ctrl" :disabled="store.currentIndex >= store.trackCount - 1" @click="store.next()">&gt;|</button>
+      <button class="ctrl ctrl-play" :aria-label="store.isPlaying ? '暂停' : '播放'" @click="store.togglePlay()">
+        <img
+          class="ctrl-icon ctrl-icon-play"
+          :src="store.isPlaying ? '/player-icons/pause.png' : '/player-icons/play.png'"
+          alt=""
+          aria-hidden="true"
+        />
+      </button>
+      <button class="ctrl" :disabled="store.currentIndex >= store.trackCount - 1" aria-label="下一首" @click="store.next()">
+        <img class="ctrl-icon" src="/player-icons/next.png" alt="" aria-hidden="true" />
+      </button>
     </div>
   </div>
 
   <!-- 无会话占位 -->
   <div v-else class="stage-empty">
-    <div class="empty-disc">
-      <span class="empty-label">NO SIGNAL</span>
+    <div class="empty-visual">
+      <div class="empty-rings" aria-hidden="true">
+        <span class="empty-ring ring-a" />
+        <span class="empty-ring ring-b" />
+        <span class="empty-ring ring-c" />
+      </div>
+      <div class="empty-disc">
+        <span class="empty-label">NO SIGNAL</span>
+      </div>
+      <div class="empty-beam" aria-hidden="true" />
+    </div>
+    <div class="empty-copy">
+      <span class="empty-kicker">待启动</span>
+      <span class="empty-title">开启一段私人电台</span>
+      <span class="empty-subtitle">MyRadio 会结合你的品味、场景和天气，安静地编排下一组歌。</span>
     </div>
   </div>
 </template>
 
 <style scoped>
 .radio-stage {
-  height: 512px;
-  min-height: 512px;
-  max-height: 512px;
-  padding: 8px 16px 10px;
+  height: 430px;
+  min-height: 430px;
+  max-height: 430px;
+  padding: 10px 16px 8px;
   position: relative;
   overflow: hidden;
   display: grid;
-  grid-template-rows: 45px 94px 72px 202px 16px 55px;
-  row-gap: 4px;
+  grid-template-rows: 58px 96px 184px 16px 44px;
+  row-gap: 2px;
   box-sizing: border-box;
 }
 
@@ -150,8 +151,8 @@ function handleProgressClick(e: MouseEvent) {
   inset: -40px;
   background-size: cover;
   background-position: center;
-  filter: blur(46px) brightness(0.32) saturate(1.45);
-  opacity: 0.62;
+  filter: blur(48px) brightness(0.34) saturate(1.55);
+  opacity: 0.68;
   z-index: 0;
   transition: background-image 0.8s ease;
   pointer-events: none;
@@ -163,8 +164,9 @@ function handleProgressClick(e: MouseEvent) {
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(180deg, rgba(8, 9, 13, 0.08), rgba(8, 9, 13, 0.72)),
-    radial-gradient(circle at 70% 22%, rgba(216, 181, 106, 0.08), transparent 35%);
+    linear-gradient(180deg, rgba(8, 9, 13, 0.02), rgba(8, 9, 13, 0.38) 62%, rgba(8, 9, 13, 0.66)),
+    radial-gradient(circle at 70% 22%, rgba(216, 181, 106, 0.1), transparent 35%),
+    radial-gradient(circle at 12% 52%, rgba(112, 139, 181, 0.08), transparent 38%);
   pointer-events: none;
   z-index: 0;
 }
@@ -183,24 +185,27 @@ function handleProgressClick(e: MouseEvent) {
   position: relative;
   z-index: 1;
   display: grid;
-  gap: 1px;
+  gap: 2px;
   min-height: 0;
   overflow: hidden;
+  align-content: center;
 }
 
 .set-label {
   font-family: var(--font-mono);
   font-size: 8px;
-  color: var(--warm);
+  line-height: 1.2;
+  color: rgba(216, 181, 106, 0.76);
   letter-spacing: 1.6px;
   text-transform: uppercase;
 }
 
 .set-title {
   font-family: var(--font-body);
-  font-size: 12px;
-  color: var(--text-primary);
-  font-weight: 500;
+  font-size: 13px;
+  line-height: 1.22;
+  color: rgba(244, 239, 228, 0.9);
+  font-weight: 560;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -209,7 +214,8 @@ function handleProgressClick(e: MouseEvent) {
 .set-meta {
   font-family: var(--font-body);
   font-size: 9px;
-  color: var(--text-3);
+  line-height: 1.28;
+  color: rgba(241, 233, 216, 0.42);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -226,9 +232,9 @@ function handleProgressClick(e: MouseEvent) {
   position: absolute;
   inset: 12px 4px -8px;
   border-radius: 18px;
-  background: var(--ember-dim);
-  filter: blur(18px);
-  opacity: 0.86;
+  background: linear-gradient(135deg, var(--ember-dim), rgba(112, 139, 181, 0.13));
+  filter: blur(20px);
+  opacity: 0.92;
 }
 
 .album-tile {
@@ -236,10 +242,10 @@ function handleProgressClick(e: MouseEvent) {
   height: 86px;
   border-radius: 14px;
   overflow: hidden;
-  border: 1px solid rgba(244, 239, 228, 0.16);
+  border: 1px solid rgba(244, 239, 228, 0.08);
   box-shadow:
-    0 12px 30px rgba(0, 0, 0, 0.38),
-    0 0 0 1px rgba(255, 255, 255, 0.02);
+    0 18px 42px rgba(0, 0, 0, 0.42),
+    0 0 0 1px rgba(255, 255, 255, 0.018);
   position: relative;
   background:
     radial-gradient(circle at 35% 24%, rgba(244, 239, 228, 0.12), transparent 36%),
@@ -278,7 +284,7 @@ function handleProgressClick(e: MouseEvent) {
   font-family: var(--font-body);
   font-size: 16px;
   font-weight: 650;
-  color: var(--text-primary);
+  color: rgba(244, 239, 228, 0.94);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -288,7 +294,7 @@ function handleProgressClick(e: MouseEvent) {
 .track-artist {
   font-family: var(--font-body);
   font-size: 11px;
-  color: var(--text-primary);
+  color: rgba(241, 233, 216, 0.7);
   margin-top: 2px;
   letter-spacing: 0.3px;
 }
@@ -306,95 +312,23 @@ function handleProgressClick(e: MouseEvent) {
   display: flex;
   align-items: center;
   gap: 3px;
-  opacity: 0.74;
+  opacity: 0.88;
 }
 
 .wave-bar {
   width: 3px;
   min-height: 4px;
   border-radius: 999px;
-  background: linear-gradient(180deg, var(--wave), rgba(216, 181, 106, 0.42));
+  background: linear-gradient(180deg, rgba(241, 233, 216, 0.68), rgba(216, 181, 106, 0.4));
   transform-origin: center;
-  transform: scaleY(0.36);
+  transition: height 90ms linear, opacity 120ms ease;
+  opacity: 0.56;
+  box-shadow: 0 0 8px rgba(216, 181, 106, 0.08);
 }
 
 .track-waveform.active .wave-bar {
-  animation: wave-rise 1.05s ease-in-out infinite;
-}
-
-/* DJ 独白字幕层 */
-.voice-note {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 8px 14px 8px 16px;
-  min-height: 0;
-  overflow: hidden;
-  border: 0;
-  border-radius: 0;
-  background:
-    radial-gradient(ellipse at 12% 50%, rgba(216, 181, 106, 0.11), transparent 34%),
-    linear-gradient(180deg, rgba(244, 239, 228, 0.044), rgba(244, 239, 228, 0.018) 58%, rgba(244, 239, 228, 0));
-  color: var(--text-primary);
-  box-shadow:
-    inset 0 1px 0 rgba(244, 239, 228, 0.026),
-    inset 0 -1px 0 rgba(244, 239, 228, 0.018);
-  mask-image: linear-gradient(90deg, transparent 0%, #000 5%, #000 95%, transparent 100%);
-  -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 5%, #000 95%, transparent 100%);
-}
-
-.voice-note.empty {
-  visibility: hidden;
-}
-
-.voice-mark {
-  width: 28px;
-  height: 34px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 2px;
-  flex-shrink: 0;
-}
-
-.voice-bar {
-  width: 3px;
-  min-height: 4px;
-  border-radius: 999px;
-  background: linear-gradient(180deg, rgba(241, 233, 216, 0.76), rgba(216, 181, 106, 0.46));
-  transform-origin: center;
-  transition: height 80ms linear, opacity 120ms ease;
-  opacity: 0.42;
-}
-
-.voice-mark.active .voice-bar {
-  opacity: 0.95;
-}
-
-.voice-copy {
-  min-width: 0;
-  flex: 1;
-  position: relative;
-}
-
-.voice-label {
-  display: none;
-}
-
-.voice-text {
-  font-family: var(--font-body);
-  font-size: 13px;
-  font-weight: 560;
-  color: rgba(241, 233, 216, 0.78);
-  line-height: 1.65;
-  letter-spacing: 0;
-  display: -webkit-box;
-  overflow: hidden;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  text-shadow: 0 1px 16px rgba(0, 0, 0, 0.28);
+  opacity: 0.9;
+  box-shadow: 0 0 10px rgba(216, 181, 106, 0.14);
 }
 
 /* 进度条 */
@@ -409,28 +343,31 @@ function handleProgressClick(e: MouseEvent) {
 
 .time {
   font-family: var(--font-mono);
-  font-size: 9px;
-  color: var(--text-3);
+  font-size: 10px;
+  font-weight: 560;
+  color: rgba(241, 233, 216, 0.64);
   min-width: 30px;
   font-variant-numeric: tabular-nums;
 }
 
 .bar {
   flex: 1;
-  height: 3px;
-  background: rgba(244, 239, 228, 0.11);
-  border-radius: 2px;
+  height: 4px;
+  background: rgba(244, 239, 228, 0.09);
+  border-radius: 999px;
   overflow: hidden;
   cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(244, 239, 228, 0.03);
 }
 
-.bar:active { height: 5px; }
+.bar:active { height: 6px; }
 
 .fill {
   height: 100%;
-  background: linear-gradient(90deg, var(--warm), var(--signal));
-  border-radius: 2px;
+  background: linear-gradient(90deg, rgba(216, 181, 106, 0.95), rgba(77, 216, 141, 0.9));
+  border-radius: 999px;
   transition: width 0.3s linear;
+  box-shadow: 0 0 12px rgba(216, 181, 106, 0.22);
 }
 
 /* 控制按钮 */
@@ -440,53 +377,78 @@ function handleProgressClick(e: MouseEvent) {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 16px;
+  gap: 22px;
   min-height: 0;
 }
 
 .ctrl {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  border: 1px solid rgba(244, 239, 228, 0.12);
-  background: rgba(244, 239, 228, 0.045);
-  color: var(--text-2);
+  width: 34px;
+  height: 34px;
+  border: 0;
+  background: transparent;
+  color: rgba(241, 233, 216, 0.58);
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 12px;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: transform 0.16s ease, opacity 0.16s ease, filter 0.16s ease;
   padding: 0;
 }
 
-.ctrl:hover:not(:disabled) { border-color: var(--text-3); color: var(--text-primary); }
+.ctrl:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.ctrl:active:not(:disabled) {
+  transform: scale(0.94);
+}
+
 .ctrl:disabled { opacity: 0.25; cursor: not-allowed; }
 
 .ctrl-play {
-  width: 42px;
-  height: 42px;
-  font-size: 16px;
-  background: rgba(241, 233, 216, 0.11);
-  border-color: rgba(56, 217, 120, 0.26);
-  color: var(--text-primary);
-  box-shadow: 0 0 24px rgba(56, 217, 120, 0.08);
+  width: 44px;
+  height: 44px;
+  color: rgba(244, 239, 228, 0.92);
 }
 
-.ctrl-play:hover { background: rgba(56, 217, 120, 0.16); }
+.ctrl-icon {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+  display: block;
+  filter: brightness(0) saturate(100%) invert(83%) sepia(12%) saturate(398%) hue-rotate(3deg) brightness(90%) contrast(90%);
+  opacity: 0.58;
+}
+
+.ctrl-icon-play {
+  width: 42px;
+  height: 42px;
+  opacity: 0.9;
+  filter:
+    brightness(0) saturate(100%) invert(92%) sepia(16%) saturate(365%) hue-rotate(7deg) brightness(98%) contrast(95%)
+    drop-shadow(0 0 12px rgba(216, 181, 106, 0.2));
+}
+
+.ctrl:hover:not(:disabled) .ctrl-icon {
+  opacity: 0.82;
+  filter:
+    brightness(0) saturate(100%) invert(91%) sepia(12%) saturate(394%) hue-rotate(5deg) brightness(96%) contrast(95%)
+    drop-shadow(0 0 8px rgba(216, 181, 106, 0.14));
+}
 
 .lyrics-wrap {
   position: relative;
   z-index: 1;
   width: 100%;
   min-width: 0;
-  height: 202px;
-  min-height: 202px;
-  max-height: 202px;
+  height: 184px;
+  min-height: 184px;
+  max-height: 184px;
   overflow: hidden;
   border: 0;
   background:
-    linear-gradient(180deg, rgba(244, 239, 228, 0.012), transparent 18%),
+    linear-gradient(180deg, rgba(244, 239, 228, 0.012), transparent 16%, transparent 76%, rgba(8, 9, 13, 0.04)),
     transparent;
   box-shadow: none;
   mask-image: linear-gradient(180deg, transparent 0%, #000 14%, #000 82%, transparent 100%);
@@ -496,27 +458,134 @@ function handleProgressClick(e: MouseEvent) {
 
 /* 空状态 */
 .stage-empty {
+  height: 430px;
+  min-height: 430px;
+  max-height: 430px;
+  padding: 10px 16px 12px;
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: 1fr auto;
+  align-items: center;
+  background:
+    radial-gradient(circle at 50% 18%, rgba(216, 181, 106, 0.08), transparent 18%),
+    radial-gradient(circle at 50% 46%, rgba(241, 233, 216, 0.05), transparent 34%),
+    linear-gradient(180deg, rgba(8, 9, 13, 0.86), rgba(8, 9, 13, 0.98));
+}
+
+.stage-empty::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 50% 22%, rgba(216, 181, 106, 0.12), transparent 22%),
+    radial-gradient(circle at 16% 48%, rgba(77, 216, 141, 0.08), transparent 30%),
+    linear-gradient(180deg, rgba(244, 239, 228, 0.02), transparent 34%, rgba(8, 9, 13, 0) 64%);
+  pointer-events: none;
+}
+
+.empty-visual {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 40px 16px;
+}
+
+.empty-rings {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+}
+
+.empty-ring {
+  position: absolute;
+  border-radius: 50%;
+  border: 1px solid rgba(244, 239, 228, 0.06);
+  box-shadow: inset 0 0 0 1px rgba(244, 239, 228, 0.01);
+}
+
+.ring-a {
+  width: 132px;
+  height: 132px;
+  opacity: 0.38;
+}
+
+.ring-b {
+  width: 182px;
+  height: 182px;
+  opacity: 0.2;
+}
+
+.ring-c {
+  width: 240px;
+  height: 240px;
+  opacity: 0.1;
 }
 
 .empty-disc {
-  width: 80px;
-  height: 80px;
+  width: 88px;
+  height: 88px;
   border-radius: 50%;
-  border: 1px solid var(--line);
+  border: 1px solid rgba(244, 239, 228, 0.08);
+  background:
+    radial-gradient(circle at 50% 38%, rgba(244, 239, 228, 0.05), transparent 28%),
+    rgba(14, 17, 23, 0.78);
   display: flex;
   align-items: center;
   justify-content: center;
-  opacity: 0.3;
+  opacity: 0.56;
+  box-shadow:
+    inset 0 1px 0 rgba(244, 239, 228, 0.02),
+    0 0 0 1px rgba(255, 255, 255, 0.01);
+}
+
+.empty-beam {
+  position: absolute;
+  width: 180px;
+  height: 36px;
+  bottom: 18px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, rgba(216, 181, 106, 0.08), transparent);
+  filter: blur(10px);
 }
 
 .empty-label {
   font-family: var(--font-brand);
-  font-size: 6px;
-  color: var(--text-3);
-  letter-spacing: 1px;
+  font-size: 8px;
+  color: rgba(241, 233, 216, 0.56);
+  letter-spacing: 1.2px;
+}
+
+.empty-copy {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 4px;
+  justify-items: center;
+  padding-bottom: 18px;
+}
+
+.empty-kicker {
+  font-family: var(--font-mono);
+  font-size: 8px;
+  color: rgba(216, 181, 106, 0.7);
+  letter-spacing: 1.8px;
+}
+
+.empty-title {
+  font-family: var(--font-body);
+  font-size: 13px;
+  color: rgba(244, 239, 228, 0.84);
+  letter-spacing: 0.8px;
+}
+
+.empty-subtitle {
+  max-width: 270px;
+  text-align: center;
+  font-family: var(--font-body);
+  font-size: 10px;
+  line-height: 1.5;
+  color: rgba(241, 233, 216, 0.46);
 }
 </style>

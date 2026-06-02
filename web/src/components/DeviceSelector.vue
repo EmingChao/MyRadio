@@ -7,8 +7,18 @@ const store = useDeviceStore()
 const open = ref(false)
 
 const deviceTypeLabels: Record<string, string> = {
-  WEB_AUDIO: 'BROWSER',
-  MOCK_SPEAKER: 'MOCK',
+  WEB_AUDIO: '浏览器',
+  MOCK_SPEAKER: '模拟',
+}
+
+const deviceNameLabels: Record<string, string> = {
+  Browser: '浏览器播放',
+  'Mock Speaker': '模拟音箱',
+}
+
+function formatDeviceName(device?: PlayDevice | null) {
+  if (!device) return '播放设备'
+  return deviceNameLabels[device.deviceName] || device.deviceName
 }
 
 function handleSelect(device: PlayDevice) {
@@ -26,7 +36,7 @@ function handleVolumeChange(device: PlayDevice, e: Event) {
   <div class="device-selector">
     <button class="device-trigger" @click="open = !open">
       <span class="device-icon">{{ store.currentDevice?.deviceType === 'MOCK_SPEAKER' ? '🔊' : '💻' }}</span>
-      <span class="device-name">{{ store.currentDevice?.deviceName || 'DEVICE' }}</span>
+      <span class="device-name">{{ formatDeviceName(store.currentDevice) }}</span>
       <span class="device-arrow" :class="{ open }">▾</span>
     </button>
 
@@ -40,12 +50,12 @@ function handleVolumeChange(device: PlayDevice, e: Event) {
           @click="handleSelect(device)"
         >
           <span class="device-status" :class="{ online: device.onlineStatus === 'ONLINE' }" />
-          <span class="device-row-name">{{ device.deviceName }}</span>
+          <span class="device-row-name">{{ formatDeviceName(device) }}</span>
           <span class="device-type">{{ deviceTypeLabels[device.deviceType] || device.deviceType }}</span>
         </div>
       </div>
       <div v-if="store.currentDevice" class="device-volume">
-        <span class="vol-label">VOL</span>
+        <span class="vol-label">音量</span>
         <input
           type="range"
           min="0"
@@ -69,13 +79,15 @@ function handleVolumeChange(device: PlayDevice, e: Event) {
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 1px 6px;
-  background: transparent;
+  padding: 4px 8px;
+  background: rgba(244, 239, 228, 0.035);
   border: 1px solid var(--border);
+  border-radius: 999px;
   color: var(--text-muted);
-  font-family: var(--font-mono);
-  font-size: 9px;
-  letter-spacing: 1px;
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0;
   cursor: pointer;
   transition: all 0.15s;
 }
@@ -90,7 +102,7 @@ function handleVolumeChange(device: PlayDevice, e: Event) {
 }
 
 .device-name {
-  max-width: 80px;
+  max-width: 112px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -111,6 +123,9 @@ function handleVolumeChange(device: PlayDevice, e: Event) {
   min-width: 200px;
   background: var(--bg-panel);
   border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.32);
   z-index: 100;
 }
 
@@ -150,8 +165,9 @@ function handleVolumeChange(device: PlayDevice, e: Event) {
 }
 
 .device-row-name {
-  font-family: var(--font-mono);
-  font-size: 11px;
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 600;
   color: var(--text-secondary);
   flex: 1;
 }
@@ -161,12 +177,14 @@ function handleVolumeChange(device: PlayDevice, e: Event) {
 }
 
 .device-type {
-  font-family: var(--font-mono);
-  font-size: 8px;
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-weight: 650;
   color: var(--text-muted);
-  letter-spacing: 1px;
-  padding: 1px 4px;
+  letter-spacing: 0;
+  padding: 1px 6px;
   border: 1px solid var(--border);
+  border-radius: 999px;
 }
 
 .device-volume {
@@ -178,10 +196,11 @@ function handleVolumeChange(device: PlayDevice, e: Event) {
 }
 
 .vol-label {
-  font-family: var(--font-mono);
-  font-size: 8px;
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-weight: 650;
   color: var(--text-muted);
-  letter-spacing: 1px;
+  letter-spacing: 0;
   flex-shrink: 0;
 }
 

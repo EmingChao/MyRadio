@@ -35,14 +35,15 @@ onMounted(async () => {
 <template>
   <div class="taste">
     <div class="taste-header">
-      <span class="taste-label">TASTE DNA</span>
+      <span class="taste-label">品味画像</span>
+      <p class="taste-title">你的听歌记忆</p>
       <div class="taste-tabs">
         <button
           v-for="tab in [
-            { key: 'overview', label: 'OVERVIEW' },
-            { key: 'artists', label: 'ARTISTS' },
-            { key: 'tracks', label: 'TOP' },
-            { key: 'playlists', label: 'LISTS' },
+            { key: 'overview', label: '概览' },
+            { key: 'artists', label: '歌手' },
+            { key: 'tracks', label: '常听' },
+            { key: 'playlists', label: '歌单' },
           ]"
           :key="tab.key"
           class="taste-tab"
@@ -52,16 +53,15 @@ onMounted(async () => {
       </div>
     </div>
 
-    <div v-if="loading" class="taste-loading">LOADING...</div>
+    <div v-if="loading" class="taste-loading">正在读取品味...</div>
 
     <div v-else-if="taste" class="taste-body">
       <!-- Overview -->
       <div v-if="activeTab === 'overview'" class="taste-sections">
         <section class="taste-paper">
-          <div class="paper-kicker">I HAVE TASTE.</div>
+          <div class="paper-kicker">MyRadio 记忆</div>
           <p class="paper-copy">
-            {{ playlists.length }} playlists, built from your Netease memory.
-            Claudio reads this before choosing what to play.
+            已读取 {{ playlists.length }} 个歌单。MyRadio 会先理解这些偏好，再决定下一首该怎么接。
           </p>
           <div class="paper-tags">
             <span v-for="s in taste.signatures.slice(0, 4)" :key="s">{{ s }}</span>
@@ -69,21 +69,21 @@ onMounted(async () => {
         </section>
 
         <section class="taste-section">
-          <div class="section-title">SIGNATURES</div>
+          <div class="section-title">听感标签</div>
           <div class="tag-list">
             <span v-for="s in taste.signatures" :key="s" class="tag tag-signal">{{ s }}</span>
           </div>
         </section>
 
         <section class="taste-section">
-          <div class="section-title">FAVORITE GENRES</div>
+          <div class="section-title">偏好风格</div>
           <div class="tag-list">
             <span v-for="g in taste.favoriteGenres" :key="g" class="tag">{{ g }}</span>
           </div>
         </section>
 
         <section class="taste-section">
-          <div class="section-title">BY TIME</div>
+          <div class="section-title">按时间</div>
           <div class="meta-grid">
             <div v-for="(tags, period) in taste.byTimeOfDay" :key="period" class="meta-row">
               <span class="meta-key">{{ period }}</span>
@@ -93,7 +93,7 @@ onMounted(async () => {
         </section>
 
         <section class="taste-section">
-          <div class="section-title">BY MOOD</div>
+          <div class="section-title">按心情</div>
           <div class="meta-grid">
             <div v-for="(tags, mood) in taste.byMood" :key="mood" class="meta-row">
               <span class="meta-key">{{ mood }}</span>
@@ -103,7 +103,7 @@ onMounted(async () => {
         </section>
 
         <section v-if="taste.doNotPlay.length" class="taste-section">
-          <div class="section-title">DO NOT PLAY</div>
+          <div class="section-title">暂不播放</div>
           <div class="tag-list">
             <span v-for="d in taste.doNotPlay" :key="d" class="tag tag-danger">{{ d }}</span>
           </div>
@@ -113,7 +113,7 @@ onMounted(async () => {
       <!-- Artists -->
       <div v-else-if="activeTab === 'artists'" class="taste-sections">
         <section class="taste-section">
-          <div class="section-title">FAVORITE ARTISTS</div>
+          <div class="section-title">常听歌手</div>
           <div class="rank-list">
             <div v-for="(a, i) in taste.favoriteArtists" :key="i" class="rank-row">
               <span class="rank-num">{{ String(i + 1).padStart(2, '0') }}</span>
@@ -127,7 +127,7 @@ onMounted(async () => {
       <!-- Top Tracks -->
       <div v-else-if="activeTab === 'tracks'" class="taste-sections">
         <section class="taste-section">
-          <div class="section-title">LIFELONG TOP</div>
+          <div class="section-title">长期常听</div>
           <div class="rank-list">
             <div v-for="(t, i) in taste.lifelongTop" :key="i" class="rank-row">
               <span class="rank-num">{{ String(i + 1).padStart(2, '0') }}</span>
@@ -144,7 +144,7 @@ onMounted(async () => {
       <!-- Playlists -->
       <div v-else-if="activeTab === 'playlists'" class="taste-sections">
         <section class="taste-section">
-          <div class="section-title">PLAYLISTS</div>
+          <div class="section-title">歌单来源</div>
           <div class="rank-list">
             <div v-for="p in playlists" :key="p.id" class="rank-row">
               <span class="rank-name">{{ p.playlist_name }}</span>
@@ -162,20 +162,29 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   height: 100%;
+  color: var(--text-primary);
 }
 
 .taste-header {
-  padding: 10px 16px 0;
-  border-bottom: 1px solid var(--line);
+  padding: 4px 16px 10px;
+  border-bottom: 0;
 }
 
 .taste-label {
-  font-family: var(--font-brand);
-  font-size: 10px;
-  color: var(--signal);
-  letter-spacing: 2px;
+  font-family: var(--font-mono);
+  font-size: 8px;
+  color: rgba(216, 181, 106, 0.76);
+  letter-spacing: 1.6px;
   display: block;
-  margin-bottom: 8px;
+  text-transform: uppercase;
+}
+
+.taste-title {
+  margin: 2px 0 9px;
+  font-family: var(--font-body);
+  font-size: 15px;
+  font-weight: 620;
+  color: rgba(244, 239, 228, 0.92);
 }
 
 .taste-tabs {
@@ -184,11 +193,11 @@ onMounted(async () => {
 }
 
 .taste-tab {
-  padding: 4px 10px;
-  background: transparent;
-  border: 1px solid var(--line);
+  padding: 4px 9px;
+  background: rgba(244, 239, 228, 0.026);
+  border: 1px solid rgba(244, 239, 228, 0.055);
   border-radius: 16px;
-  color: var(--text-3);
+  color: rgba(241, 233, 216, 0.42);
   font-family: var(--font-mono);
   font-size: 9px;
   letter-spacing: 1px;
@@ -199,9 +208,9 @@ onMounted(async () => {
 .taste-tab:hover { color: var(--text-2); }
 
 .taste-tab.active {
-  background: var(--signal-glow);
-  border-color: var(--signal-dim);
-  color: var(--signal);
+  background: rgba(77, 216, 141, 0.1);
+  border-color: rgba(77, 216, 141, 0.16);
+  color: rgba(143, 238, 180, 0.88);
 }
 
 .taste-loading {
@@ -215,7 +224,7 @@ onMounted(async () => {
 .taste-body {
   flex: 1;
   overflow-y: auto;
-  padding: 8px 16px;
+  padding: 0 14px 12px;
 }
 
 .taste-body::-webkit-scrollbar { width: 2px; }
@@ -226,27 +235,29 @@ onMounted(async () => {
 }
 
 .taste-paper {
-  margin: 4px 0 16px;
+  margin: 0 0 14px;
   padding: 14px 14px 13px;
-  border-radius: var(--radius-lg);
-  background: var(--paper);
-  color: var(--ink);
-  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.32);
+  border-radius: 10px;
+  border: 1px solid rgba(244, 239, 228, 0.075);
+  background:
+    radial-gradient(circle at 14% 14%, rgba(216, 181, 106, 0.1), transparent 36%),
+    linear-gradient(180deg, rgba(244, 239, 228, 0.05), rgba(244, 239, 228, 0.018));
+  box-shadow: inset 0 1px 0 rgba(244, 239, 228, 0.035);
 }
 
 .paper-kicker {
-  font-family: var(--font-brand);
-  font-size: 24px;
-  letter-spacing: 1.5px;
-  line-height: 1;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 1.4px;
+  color: rgba(77, 216, 141, 0.74);
 }
 
 .paper-copy {
   margin: 7px 0 0;
-  font-family: var(--font-mono);
+  font-family: var(--font-body);
   font-size: 11px;
   line-height: 1.65;
-  color: rgba(21, 21, 21, 0.72);
+  color: rgba(241, 233, 216, 0.58);
 }
 
 .paper-tags {
@@ -258,11 +269,12 @@ onMounted(async () => {
 
 .paper-tags span {
   padding: 2px 7px;
-  border: 1px solid rgba(21, 21, 21, 0.12);
+  border: 1px solid rgba(244, 239, 228, 0.08);
   border-radius: 999px;
   font-family: var(--font-mono);
   font-size: 10px;
-  color: rgba(21, 21, 21, 0.72);
+  color: rgba(241, 233, 216, 0.62);
+  background: rgba(244, 239, 228, 0.035);
 }
 
 .section-title {
@@ -281,17 +293,18 @@ onMounted(async () => {
 
 .tag {
   padding: 2px 8px;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  color: var(--text-2);
+  background: rgba(244, 239, 228, 0.035);
+  border: 1px solid rgba(244, 239, 228, 0.065);
+  color: rgba(241, 233, 216, 0.62);
   font-family: var(--font-mono);
   font-size: 11px;
+  border-radius: 999px;
 }
 
 .tag-signal {
-  border-color: var(--signal-dim);
-  color: var(--signal);
-  background: var(--signal-glow);
+  border-color: rgba(77, 216, 141, 0.16);
+  color: rgba(143, 238, 180, 0.88);
+  background: rgba(77, 216, 141, 0.09);
 }
 
 .tag-danger {
@@ -309,6 +322,8 @@ onMounted(async () => {
   display: flex;
   gap: 8px;
   align-items: baseline;
+  padding: 5px 0;
+  border-bottom: 1px solid rgba(244, 239, 228, 0.035);
 }
 
 .meta-key {
@@ -328,14 +343,17 @@ onMounted(async () => {
 .rank-list {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
 }
 
 .rank-row {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 4px 0;
+  padding: 8px 9px;
+  border-radius: 8px;
+  background: rgba(244, 239, 228, 0.024);
+  border: 1px solid rgba(244, 239, 228, 0.045);
 }
 
 .rank-num {
@@ -354,18 +372,18 @@ onMounted(async () => {
 }
 
 .rank-name {
-  font-family: var(--font-mono);
+  font-family: var(--font-body);
   font-size: 12px;
-  color: var(--text-primary);
+  color: rgba(244, 239, 228, 0.9);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .rank-sub {
-  font-family: var(--font-mono);
+  font-family: var(--font-body);
   font-size: 10px;
-  color: var(--text-3);
+  color: rgba(241, 233, 216, 0.42);
 }
 
 .rank-count {

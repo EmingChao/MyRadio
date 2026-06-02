@@ -2,7 +2,7 @@
  * 天气服务 — 使用 Open-Meteo API（免费，无需 API Key）
  */
 
-interface WeatherData {
+export interface WeatherData {
   temperature: number;    // 当前温度 (°C)
   weatherCode: number;    // 天气代码
   description: string;    // 天气描述

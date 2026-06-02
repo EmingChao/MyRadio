@@ -37,43 +37,66 @@ function onMaskClick() {
   z-index: 100;
   display: flex;
   align-items: flex-end;
+  justify-content: center;
+  padding: 0 0 24px;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
 }
 
 .sheet-container {
-  width: 100%;
-  max-height: 70vh;
-  background: var(--bg-panel);
-  border-top: 1px solid var(--border-light);
-  border-radius: 12px 12px 0 0;
+  width: min(390px, calc(100vw - 24px));
+  max-height: min(70vh, 560px);
+  background:
+    linear-gradient(180deg, rgba(18, 22, 29, 0.98), rgba(10, 12, 16, 0.98));
+  border: 1px solid rgba(244, 239, 228, 0.08);
+  border-bottom: 0;
+  border-radius: 20px 20px 0 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  box-shadow:
+    0 -20px 60px rgba(0, 0, 0, 0.42),
+    0 0 0 1px rgba(255, 255, 255, 0.018);
 }
 
 .sheet-handle {
   width: 36px;
   height: 4px;
-  background: var(--border-light);
+  background: rgba(244, 239, 228, 0.18);
   border-radius: 2px;
   margin: 8px auto 4px;
 }
 
 .sheet-header {
-  padding: 8px 16px;
-  border-bottom: 1px solid var(--border);
+  padding: 8px 16px 6px;
+  border-bottom: 1px solid rgba(244, 239, 228, 0.06);
 }
 
 .sheet-title {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  color: var(--text-muted);
-  letter-spacing: 1px;
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-weight: 700;
+  color: rgba(241, 233, 216, 0.76);
+  letter-spacing: 0;
 }
 
 .sheet-body {
   flex: 1;
   overflow-y: auto;
   padding: 12px 16px 24px;
+}
+
+@media (max-width: 768px) {
+  .sheet-overlay {
+    padding: 0;
+  }
+
+  .sheet-container {
+    width: min(390px, 100vw);
+    max-height: 72vh;
+    border-left: 0;
+    border-right: 0;
+  }
 }
 
 /* 动画 */

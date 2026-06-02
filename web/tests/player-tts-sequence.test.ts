@@ -5,12 +5,12 @@ const session = {
   sessionId: 1,
   sessionTitle: '深夜编程',
   aiSummary: '',
-  say: '欢迎来到今晚的 Claudio 电台。',
+  say: '欢迎来到今晚的 MyRadio。',
   tracks: [
     {
       trackId: 101,
-      title: 'Intro Song',
-      artist: 'Artist A',
+      title: '开场曲',
+      artist: '歌手 A',
       album: null,
       coverUrl: null,
       playUrl: '/intro.mp3',
@@ -20,8 +20,8 @@ const session = {
     },
     {
       trackId: 102,
-      title: 'Next Song',
-      artist: 'Artist B',
+      title: '下一首',
+      artist: '歌手 B',
       album: null,
       coverUrl: null,
       playUrl: '/next.mp3',
@@ -35,7 +35,7 @@ const session = {
 
 assert.deepEqual(resolveDjSpeechBeforeTrack(session, 0, true), {
   kind: 'opening',
-  text: '欢迎来到今晚的 Claudio 电台。',
+  text: '欢迎来到今晚的 MyRadio。',
 })
 
 assert.deepEqual(resolveDjSpeechBeforeTrack(session, 1, false), {

@@ -11,6 +11,7 @@ import dailyPlanRouter from './api/daily-plan';
 import neteaseRouter from './api/netease';
 import tasteRouter from './api/taste';
 import deviceRouter from './api/device';
+import weatherRouter from './api/weather';
 import { wsManager } from './ws/manager';
 import { errorHandler } from './middleware/error-handler';
 import { startScheduler } from './services/scheduler';
@@ -73,6 +74,9 @@ app.use('/api/taste', tasteRouter);
 
 // 设备接口
 app.use('/api/device', deviceRouter);
+
+// 天气接口
+app.use('/api/weather', weatherRouter);
 
 // 统一错误处理（必须放在所有路由之后）
 app.use(errorHandler);

@@ -8,15 +8,16 @@ const store = usePlayerStore()
   <div class="queue">
     <div class="queue-header">
       <div>
-        <span class="queue-label">TONIGHT'S SET</span>
-        <p class="queue-title">{{ store.session?.sessionTitle || 'Queue' }}</p>
+        <span class="queue-label">播放队列</span>
+        <p class="queue-title">{{ store.session?.sessionTitle || '队列' }}</p>
       </div>
-      <span class="queue-count">{{ store.trackCount }} TRACKS</span>
+      <span class="queue-count">{{ store.trackCount }} 首</span>
     </div>
     <div v-if="store.currentTrack" class="queue-current">
-      <span class="current-kicker">CURRENT</span>
+      <span class="current-kicker">正在播放</span>
       <strong>{{ store.currentTrack.title }}</strong>
-      <p>{{ store.currentTrack.recommendReason || 'Claudio picked this track for the current set.' }}</p>
+      <small>{{ store.currentTrack.artist }}</small>
+      <p>{{ store.currentTrack.recommendReason || 'MyRadio 会根据当前场景和你的品味继续调整后续队列。' }}</p>
     </div>
     <div class="queue-list">
       <div
@@ -32,7 +33,7 @@ const store = usePlayerStore()
           <span class="item-artist">{{ track.artist }}</span>
           <span v-if="track.recommendReason" class="item-reason">{{ track.recommendReason }}</span>
         </div>
-        <span v-if="i === store.currentIndex" class="item-playing">▶</span>
+        <span v-if="i === store.currentIndex" class="item-playing" aria-label="当前播放" />
       </div>
     </div>
   </div>
@@ -43,48 +44,57 @@ const store = usePlayerStore()
   display: flex;
   flex-direction: column;
   height: 100%;
+  color: var(--text-primary);
 }
 
 .queue-header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  padding: 10px 16px;
-  border-bottom: 1px solid var(--line);
+  padding: 4px 16px 12px;
+  border-bottom: 0;
   gap: 12px;
 }
 
 .queue-label {
   font-family: var(--font-mono);
-  font-size: 9px;
-  color: var(--text-3);
-  letter-spacing: 1px;
+  font-size: 8px;
+  color: rgba(216, 181, 106, 0.76);
+  letter-spacing: 1.6px;
+  text-transform: uppercase;
 }
 
 .queue-title {
   margin: 2px 0 0;
-  font-family: var(--font-mono);
-  font-size: 13px;
-  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: 15px;
+  font-weight: 620;
+  color: rgba(244, 239, 228, 0.92);
   line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .queue-count {
   font-family: var(--font-mono);
   font-size: 9px;
-  color: var(--text-3);
-  letter-spacing: 1px;
+  color: rgba(241, 233, 216, 0.42);
+  letter-spacing: 0.8px;
   flex-shrink: 0;
   margin-top: 2px;
+  text-transform: uppercase;
 }
 
 .queue-current {
-  margin: 10px 14px 8px;
-  padding: 12px 13px;
-  border-radius: var(--radius-lg);
-  background: var(--paper);
-  color: var(--ink);
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
+  margin: 0 14px 10px;
+  padding: 12px 13px 13px;
+  border-radius: 10px;
+  border: 1px solid rgba(244, 239, 228, 0.075);
+  background:
+    radial-gradient(circle at 10% 10%, rgba(216, 181, 106, 0.09), transparent 38%),
+    linear-gradient(180deg, rgba(244, 239, 228, 0.048), rgba(244, 239, 228, 0.018));
+  box-shadow: inset 0 1px 0 rgba(244, 239, 228, 0.035);
 }
 
 .current-kicker {
@@ -92,28 +102,47 @@ const store = usePlayerStore()
   font-family: var(--font-mono);
   font-size: 8px;
   letter-spacing: 1.5px;
-  color: rgba(21, 21, 21, 0.5);
+  color: rgba(77, 216, 141, 0.74);
   margin-bottom: 4px;
 }
 
 .queue-current strong {
   display: block;
-  font-family: var(--font-mono);
-  font-size: 13px;
-  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: rgba(244, 239, 228, 0.94);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.queue-current small {
+  display: block;
+  margin-top: 1px;
+  font-family: var(--font-body);
+  font-size: 11px;
+  color: rgba(241, 233, 216, 0.56);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .queue-current p {
-  margin: 5px 0 0;
-  font-family: var(--font-mono);
+  margin: 7px 0 0;
+  font-family: var(--font-body);
   font-size: 11px;
   line-height: 1.6;
-  color: rgba(21, 21, 21, 0.68);
+  color: rgba(241, 233, 216, 0.58);
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
 }
 
 .queue-list {
   flex: 1;
   overflow-y: auto;
+  padding: 0 8px 10px;
 }
 
 .queue-list::-webkit-scrollbar { width: 2px; }
@@ -123,18 +152,21 @@ const store = usePlayerStore()
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 8px 16px;
+  padding: 9px 9px;
+  border-radius: 8px;
   cursor: pointer;
-  transition: background 0.15s;
+  border: 1px solid transparent;
+  transition: background 0.15s, border-color 0.15s, transform 0.15s;
 }
 
 .queue-item:hover {
-  background: var(--raised);
+  background: rgba(244, 239, 228, 0.035);
 }
 
 .queue-item.active {
-  background: var(--signal-glow);
-  border-left: 2px solid var(--signal-dim);
+  background:
+    linear-gradient(90deg, rgba(77, 216, 141, 0.11), rgba(244, 239, 228, 0.025));
+  border-color: rgba(77, 216, 141, 0.13);
 }
 
 .item-index {
@@ -158,19 +190,19 @@ const store = usePlayerStore()
 }
 
 .item-title {
-  font-family: var(--font-mono);
+  font-family: var(--font-body);
   font-size: 13px;
-  font-weight: 500;
-  color: var(--text-primary);
+  font-weight: 560;
+  color: rgba(244, 239, 228, 0.9);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .item-artist {
-  font-family: var(--font-mono);
+  font-family: var(--font-body);
   font-size: 10px;
-  color: var(--text-3);
+  color: rgba(241, 233, 216, 0.44);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -178,17 +210,20 @@ const store = usePlayerStore()
 
 .item-reason {
   margin-top: 2px;
-  font-family: var(--font-mono);
-  font-size: 9px;
-  color: var(--text-3);
+  font-family: var(--font-body);
+  font-size: 10px;
+  color: rgba(241, 233, 216, 0.38);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .item-playing {
-  font-size: 10px;
-  color: var(--signal);
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--signal);
+  box-shadow: 0 0 12px rgba(77, 216, 141, 0.35);
   animation: blink 1.5s ease-in-out infinite;
 }
 

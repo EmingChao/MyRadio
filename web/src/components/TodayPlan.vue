@@ -39,14 +39,14 @@ async function handlePlayFromPlan() {
 
 <template>
   <div class="plan">
-    <div v-if="loading" class="plan-loading">LOADING...</div>
+    <div v-if="loading" class="plan-loading">正在读取今日计划...</div>
 
     <template v-else-if="plan">
       <div class="plan-header">
-        <span class="plan-label">PLAN</span>
+        <span class="plan-label">今日计划</span>
         <span class="plan-title">{{ plan.planTitle }}</span>
+        <span v-if="plan.weatherSummary" class="plan-weather">{{ plan.weatherSummary }}</span>
       </div>
-      <div v-if="plan.weatherSummary" class="plan-weather">{{ plan.weatherSummary }}</div>
       <div class="plan-timeline">
         <div
           v-for="(item, i) in plan.items"
@@ -65,12 +65,12 @@ async function handlePlayFromPlan() {
             class="slot-play"
             :disabled="starting"
             @click.stop="handlePlayFromPlan"
-          >{{ starting ? '...' : 'START THIS SET' }}</button>
+          >{{ starting ? '...' : '播放这一段' }}</button>
         </div>
       </div>
     </template>
 
-    <div v-else class="plan-empty">NO PLAN TODAY</div>
+    <div v-else class="plan-empty">今天还没有计划</div>
   </div>
 </template>
 
@@ -79,6 +79,7 @@ async function handlePlayFromPlan() {
   display: flex;
   flex-direction: column;
   height: 100%;
+  color: var(--text-primary);
 }
 
 .plan-loading,
@@ -92,56 +93,75 @@ async function handlePlayFromPlan() {
 }
 
 .plan-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 16px;
-  border-bottom: 1px solid var(--line);
+  display: grid;
+  gap: 2px;
+  padding: 4px 16px 13px;
+  border-bottom: 0;
 }
 
 .plan-label {
   font-family: var(--font-mono);
-  font-size: 9px;
-  color: var(--warm);
-  letter-spacing: 1px;
-  padding: 1px 6px;
-  border: 1px solid var(--warm-dim);
+  font-size: 8px;
+  color: rgba(216, 181, 106, 0.76);
+  letter-spacing: 1.6px;
+  text-transform: uppercase;
 }
 
 .plan-title {
-  font-family: var(--font-mono);
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: 15px;
+  font-weight: 620;
+  color: rgba(244, 239, 228, 0.92);
+  line-height: 1.35;
 }
 
 .plan-weather {
-  padding: 6px 16px;
-  font-family: var(--font-mono);
+  font-family: var(--font-body);
   font-size: 10px;
-  color: var(--text-3);
-  letter-spacing: 0.5px;
+  color: rgba(241, 233, 216, 0.42);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .plan-timeline {
   flex: 1;
   overflow-y: auto;
-  padding: 4px 0;
+  padding: 0 8px 12px;
 }
 
 .plan-timeline::-webkit-scrollbar { width: 2px; }
 .plan-timeline::-webkit-scrollbar-thumb { background: var(--line-m); }
 
 .plan-slot {
-  padding: 8px 16px;
-  transition: background 0.15s;
+  position: relative;
+  padding: 10px 10px 10px 14px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.plan-slot::before {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 12px;
+  bottom: 12px;
+  width: 2px;
+  border-radius: 999px;
+  background: rgba(244, 239, 228, 0.08);
 }
 
 .plan-slot.current {
-  background: var(--signal-glow);
-  border-left: 2px solid var(--signal-dim);
-  margin-left: 0;
-  padding-left: 14px;
+  background:
+    radial-gradient(circle at 12% 8%, rgba(77, 216, 141, 0.1), transparent 34%),
+    linear-gradient(90deg, rgba(77, 216, 141, 0.08), rgba(244, 239, 228, 0.02));
+  border-color: rgba(77, 216, 141, 0.12);
+}
+
+.plan-slot.current::before {
+  background: rgba(77, 216, 141, 0.74);
+  box-shadow: 0 0 12px rgba(77, 216, 141, 0.2);
 }
 
 .slot-time {
@@ -161,31 +181,33 @@ async function handlePlayFromPlan() {
 .slot-scene {
   font-family: var(--font-mono);
   font-size: 9px;
-  color: var(--signal);
+  color: rgba(77, 216, 141, 0.8);
   letter-spacing: 1px;
+  text-transform: uppercase;
 }
 
 .slot-mood {
   font-family: var(--font-mono);
   font-size: 9px;
-  color: var(--warm);
+  color: rgba(216, 181, 106, 0.78);
 }
 
 .slot-desc {
-  font-family: var(--font-mono);
+  font-family: var(--font-body);
   font-size: 11px;
-  color: var(--text-2);
-  margin-top: 3px;
-  line-height: 1.4;
+  color: rgba(241, 233, 216, 0.56);
+  margin-top: 5px;
+  line-height: 1.55;
 }
 
 .slot-play {
-  margin-top: 6px;
-  padding: 4px 12px;
-  background: var(--signal-dim);
-  border: 1px solid rgba(55, 214, 122, 0.25);
-  border-radius: 4px;
-  color: var(--signal);
+  margin-top: 8px;
+  padding: 5px 12px;
+  background:
+    linear-gradient(180deg, rgba(77, 216, 141, 0.16), rgba(77, 216, 141, 0.08));
+  border: 1px solid rgba(77, 216, 141, 0.18);
+  border-radius: 8px;
+  color: rgba(143, 238, 180, 0.92);
   font-family: var(--font-mono);
   font-size: 9px;
   letter-spacing: 1px;

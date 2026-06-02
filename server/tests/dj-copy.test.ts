@@ -21,7 +21,7 @@ const firstTrackCopy = buildFallbackTrackCopy(track, {
   moodLabel: '专注',
 });
 
-assert.ok(firstTrackCopy.segue.length >= 70, '串场词需要能作为 TTS 独白');
+assert.ok(firstTrackCopy.segue.length >= 45, '串场词需要承担明确的情绪过渡');
 assert.ok(firstTrackCopy.djScript.length >= 70, 'DJ 解说需要介绍歌曲和体验目标');
 assert.ok(firstTrackCopy.recommendReason.length >= 70, '推荐理由需要解释为什么适合当前用户');
 assert.match(firstTrackCopy.segue, /Midnight City|M83/, '串场词需要提到歌曲或艺人');

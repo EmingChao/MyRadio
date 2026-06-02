@@ -50,6 +50,7 @@ tmp/
 temp/
 *.tmp
 *.temp
+.superpowers/
 
 # === 开发计划（个人笔记，不上传）===
 docs/DEVELOPMENT_PLAN.md
