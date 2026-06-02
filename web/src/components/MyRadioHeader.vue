@@ -90,14 +90,14 @@ async function loadWeather() {
   top: 0;
   left: 0;
   right: 0;
-  padding: 8px 16px 2px;
-  min-height: 38px;
+  padding: 8px 16px 4px;
+  min-height: 40px;
   z-index: 3;
   background:
-    linear-gradient(180deg, rgba(7, 8, 11, 0.26), rgba(7, 8, 11, 0.06));
+    linear-gradient(180deg, rgba(7, 8, 11, 0.18), rgba(7, 8, 11, 0));
   border-bottom: 0;
-  backdrop-filter: blur(18px) saturate(1.12);
-  -webkit-backdrop-filter: blur(18px) saturate(1.12);
+  backdrop-filter: blur(14px) saturate(1.08);
+  -webkit-backdrop-filter: blur(14px) saturate(1.08);
   pointer-events: auto;
 }
 
@@ -106,6 +106,7 @@ async function loadWeather() {
   grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 6px;
+  min-height: 28px;
 }
 
 .brand-row {
@@ -117,19 +118,19 @@ async function loadWeather() {
 
 .brand-name {
   font-family: var(--font-brand);
-  font-size: 16px;
+  font-size: 19px;
   line-height: 1;
-  letter-spacing: 1.2px;
-  color: rgba(244, 239, 228, 0.88);
+  letter-spacing: 1px;
+  color: rgba(244, 239, 228, 0.94);
   white-space: nowrap;
 }
 
 .brand-status {
   font-family: var(--font-mono);
-  font-size: 9px;
-  font-weight: 650;
-  color: rgba(241, 233, 216, 0.56);
-  letter-spacing: 1px;
+  font-size: 10px;
+  font-weight: 760;
+  color: rgba(241, 233, 216, 0.66);
+  letter-spacing: 0.7px;
   text-transform: uppercase;
   white-space: nowrap;
 }
@@ -175,37 +176,37 @@ async function loadWeather() {
   min-height: 16px;
   color: rgba(241, 233, 216, 0.72);
   font-family: var(--font-body);
-  font-size: 10px;
-  font-weight: 560;
+  font-size: 11px;
+  font-weight: 700;
   white-space: nowrap;
 }
 
 .weather-copy {
-  max-width: 74px;
+  max-width: 86px;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .header-time {
   font-family: var(--font-brand);
-  font-size: 17px;
-  letter-spacing: 1.2px;
-  color: rgba(244, 239, 228, 0.82);
+  font-size: 20px;
+  letter-spacing: 1px;
+  color: rgba(244, 239, 228, 0.9);
 }
 
 .header-settings {
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   border: 0;
   border-radius: 50%;
-  background: rgba(244, 239, 228, 0.06);
-  color: rgba(241, 233, 216, 0.58);
+  background: rgba(244, 239, 228, 0.035);
+  color: rgba(241, 233, 216, 0.68);
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 0;
   transition: color 0.18s ease, background 0.18s ease, transform 0.18s ease, border-color 0.18s ease;
-  border: 1px solid rgba(244, 239, 228, 0.08);
+  border: 1px solid rgba(244, 239, 228, 0.045);
 }
 
 .header-settings:hover {
@@ -219,8 +220,8 @@ async function loadWeather() {
 }
 
 .header-settings svg {
-  width: 14px;
-  height: 14px;
+  width: 15px;
+  height: 15px;
   fill: currentColor;
 }
 

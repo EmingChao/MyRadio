@@ -5,7 +5,23 @@ async function request(url: string, options?: RequestInit) {
     headers: { 'Content-Type': 'application/json' },
     ...options,
   });
-  return res.json();
+
+  const text = await res.text();
+  let data: any = null;
+  if (text.trim()) {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      throw new Error(res.ok ? '接口返回格式异常' : `接口错误 ${res.status}: ${text.slice(0, 80)}`);
+    }
+  }
+
+  if (!res.ok) {
+    const message = data?.message || (res.status === 502 ? '后端服务未连接，请确认 MyRadio 后端已启动' : `接口错误 ${res.status}`);
+    throw new Error(message);
+  }
+
+  return data;
 }
 
 /** 创建电台会话 */

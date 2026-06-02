@@ -235,8 +235,26 @@ function setTheme(value: 'dark' | 'light') {
           <DjChat />
         </div>
 
-        <!-- Command Dock: 输入/启动区 -->
-        <div class="dock-area">
+      </template>
+
+      <!-- ===== Queue Tab ===== -->
+      <div v-else-if="activeTab === 'queue'" class="tab-content">
+        <TrackQueue />
+      </div>
+
+      <!-- ===== Plan Tab ===== -->
+      <div v-else-if="activeTab === 'plan'" class="tab-content">
+        <TodayPlan />
+      </div>
+
+      <!-- ===== Taste Tab ===== -->
+      <div v-else-if="activeTab === 'taste'" class="tab-content">
+        <TastePanel />
+      </div>
+
+      <!-- Bottom Dock: 模式入口和底部导航共用一块面板，避免视觉断层。 -->
+      <div class="bottom-dock" :class="{ 'radio-dock': activeTab === 'radio' }">
+        <div v-if="activeTab === 'radio'" class="dock-area">
           <!-- 模式快捷项始终保持同一组中文选项，避免切换会话时布局跳变。 -->
           <div class="dock-chips">
             <button
@@ -265,25 +283,9 @@ function setTheme(value: 'dark' | 'light') {
             </div>
           </div>
         </div>
-      </template>
 
-      <!-- ===== Queue Tab ===== -->
-      <div v-else-if="activeTab === 'queue'" class="tab-content">
-        <TrackQueue />
+        <BottomTabs :active="activeTab" @change="handleTabChange" />
       </div>
-
-      <!-- ===== Plan Tab ===== -->
-      <div v-else-if="activeTab === 'plan'" class="tab-content">
-        <TodayPlan />
-      </div>
-
-      <!-- ===== Taste Tab ===== -->
-      <div v-else-if="activeTab === 'taste'" class="tab-content">
-        <TastePanel />
-      </div>
-
-      <!-- Bottom Tabs -->
-      <BottomTabs :active="activeTab" @change="handleTabChange" />
     </div>
 
     <!-- Settings Sheet -->
@@ -330,7 +332,7 @@ function setTheme(value: 'dark' | 'light') {
   display: flex;
   justify-content: center;
   align-items: flex-start;
-  overflow: auto;
+  overflow: hidden;
   padding: 12px 0 16px;
 }
 
@@ -339,11 +341,7 @@ function setTheme(value: 'dark' | 'light') {
   width: 390px;
   height: 844px;
   flex-shrink: 0;
-  background:
-    radial-gradient(circle at 50% -5%, rgba(244, 239, 228, 0.07), transparent 26%),
-    radial-gradient(circle at 14% 26%, var(--shell-halo-a), transparent 30%),
-    radial-gradient(circle at 86% 58%, var(--shell-halo-b), transparent 34%),
-    linear-gradient(180deg, var(--shell-bg-1), var(--shell-bg-2) 47%, var(--shell-bg-3) 100%);
+  background: var(--shell-bg-2);
   border: 0;
   border-radius: 32px;
   overflow: hidden;
@@ -363,13 +361,13 @@ function setTheme(value: 'dark' | 'light') {
 
 .global-cover-ambient {
   position: absolute;
-  inset: -42px;
+  inset: -150px;
   z-index: 0;
   background-size: cover;
   background-position: center;
-  opacity: 0.7;
-  filter: blur(44px) saturate(1.38) brightness(0.48);
-  transform: scale(1.05);
+  opacity: 0.92;
+  filter: blur(58px) saturate(1.42) brightness(0.42);
+  transform: scale(1.34);
   transition: background-image 0.8s ease, opacity 0.3s ease, filter 0.3s ease;
   pointer-events: none;
 }
@@ -379,9 +377,8 @@ function setTheme(value: 'dark' | 'light') {
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(180deg, rgba(7, 8, 11, 0.34) 0%, rgba(7, 8, 11, 0.42) 45%, rgba(7, 8, 11, 0.72) 100%),
-    radial-gradient(circle at 50% 16%, rgba(244, 239, 228, 0.08), transparent 32%),
-    radial-gradient(circle at 48% 86%, rgba(77, 216, 141, 0.06), transparent 40%);
+    linear-gradient(180deg, rgba(7, 8, 11, 0.48) 0%, rgba(7, 8, 11, 0.5) 46%, rgba(7, 8, 11, 0.56) 100%),
+    radial-gradient(circle at 50% 16%, rgba(244, 239, 228, 0.08), transparent 34%);
 }
 
 .phone-shell::before {
@@ -410,14 +407,14 @@ function setTheme(value: 'dark' | 'light') {
     radial-gradient(circle at 50% 40%, rgba(216, 181, 106, 0.14), transparent 58%),
     radial-gradient(circle at 16% 52%, rgba(77, 216, 141, 0.06), transparent 45%);
   filter: blur(22px);
-  opacity: 0.28;
+  opacity: 0.14;
   animation: ambient-drift 12s ease-in-out infinite;
   pointer-events: none;
   z-index: 0;
 }
 
 .phone-shell.has-session::after {
-  opacity: 0.54;
+  opacity: 0.18;
   background:
     radial-gradient(circle at 50% 36%, rgba(216, 181, 106, 0.16), transparent 56%),
     radial-gradient(circle at 20% 46%, rgba(77, 216, 141, 0.07), transparent 42%);
@@ -444,42 +441,64 @@ function setTheme(value: 'dark' | 'light') {
   position: relative;
   z-index: 1;
   padding: 0;
+  margin-top: 36px;
 }
 
 /* ===== DJ Feed 聊天流 ===== */
 .feed-area {
-  flex: 1 1 auto;
+  flex: 0 0 198px;
+  height: 198px;
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  justify-content: flex-end;
+  justify-content: flex-start;
   min-height: 0;
-  margin-top: -6px;
-  padding: 8px 12px 6px;
+  margin-top: -2px;
+  padding: 0 12px 8px;
   position: relative;
   z-index: 2;
-  background:
-    linear-gradient(180deg, rgba(8, 9, 13, 0), rgba(8, 9, 13, 0.18) 18px, rgba(8, 9, 13, 0.28) 100%);
+  background: transparent;
+}
+
+.phone-shell:not(.has-session) .feed-area {
+  flex: 1 1 auto;
+  justify-content: flex-end;
+  padding-top: 4px;
+  padding-bottom: 18px;
+  background: transparent;
+}
+
+/* ===== Bottom Dock ===== */
+.bottom-dock {
+  flex-shrink: 0;
+  margin: auto 0 0;
+  padding: 8px 14px calc(8px + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid rgba(244, 239, 228, 0.02);
+  border-radius: 22px 22px 30px 30px;
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  position: relative;
+  z-index: 1;
+  box-shadow:
+    none;
+}
+
+.bottom-dock::before {
+  content: none;
+  position: absolute;
+  left: 18px;
+  right: 18px;
+  top: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(216, 181, 106, 0.2), transparent);
+  opacity: 0.42;
 }
 
 /* ===== Command Dock ===== */
 .dock-area {
-  flex-shrink: 0;
-  margin: 0 12px;
-  padding: 7px 10px 6px;
-  border-top: 1px solid rgba(244, 239, 228, 0.028);
-  border-left: 0;
-  border-right: 0;
-  border-radius: 14px 14px 0 0;
-  background:
-    linear-gradient(180deg, rgba(17, 20, 26, 0.54), rgba(7, 8, 11, 0.76));
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
+  padding: 0 0 8px;
   position: relative;
-  z-index: 1;
-  box-shadow:
-    inset 0 1px 0 rgba(244, 239, 228, 0.03),
-    0 -8px 18px rgba(0, 0, 0, 0.08);
 }
 
 .dock-chips {
@@ -495,16 +514,19 @@ function setTheme(value: 'dark' | 'light') {
 }
 
 .chip {
-  padding: 3px 10px;
-  background: rgba(244, 239, 228, 0.045);
-  border: 1px solid var(--line);
-  border-radius: 16px;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  color: var(--text-2);
+  flex: 1;
+  min-width: 0;
+  padding: 6px 9px;
+  background: rgba(244, 239, 228, 0.04);
+  border: 1px solid rgba(244, 239, 228, 0.055);
+  border-radius: 12px;
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(241, 233, 216, 0.68);
   cursor: pointer;
-  transition: all 0.15s;
-  letter-spacing: 0.3px;
+  transition: all 0.16s ease;
+  letter-spacing: 0;
 }
 
 .chip:hover, .chip.active {
@@ -522,6 +544,7 @@ function setTheme(value: 'dark' | 'light') {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  padding-top: 8px;
 }
 
 .dock-input-row {
@@ -536,8 +559,9 @@ function setTheme(value: 'dark' | 'light') {
   border: 1px solid rgba(244, 239, 228, 0.08);
   border-radius: 10px;
   color: var(--text-primary);
-  font-family: var(--font-mono);
-  font-size: 11px;
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 600;
   outline: none;
   transition: border-color 0.15s;
 }
@@ -556,9 +580,10 @@ function setTheme(value: 'dark' | 'light') {
   border: 1px solid rgba(56, 217, 120, 0.24);
   border-radius: 10px;
   color: var(--signal);
-  font-family: var(--font-brand);
+  font-family: var(--font-body);
   font-size: 13px;
-  letter-spacing: 1px;
+  font-weight: 800;
+  letter-spacing: 0;
   white-space: nowrap;
   transition: all 0.15s;
 }
@@ -577,11 +602,11 @@ function setTheme(value: 'dark' | 'light') {
   flex: 1;
   overflow-y: auto;
   min-height: 0;
-  padding: 44px 12px 0;
+  padding: 48px 12px 10px;
   position: relative;
   z-index: 1;
   background:
-    linear-gradient(180deg, rgba(8, 9, 13, 0.14), rgba(8, 9, 13, 0) 92px);
+    linear-gradient(180deg, rgba(8, 9, 13, 0.08), rgba(8, 9, 13, 0) 120px);
   scrollbar-width: thin;
   scrollbar-color: var(--line-m) transparent;
 }
@@ -754,9 +779,14 @@ function setTheme(value: 'dark' | 'light') {
     overflow: hidden;
   }
 
-  .dock-area {
-    margin: 0 10px;
-    padding: 8px 10px 6px;
+  .stage-area {
+    margin-top: 38px;
+  }
+
+  .bottom-dock {
+    padding-left: 12px;
+    padding-right: 12px;
+    border-radius: 20px 20px 0 0;
   }
 }
 

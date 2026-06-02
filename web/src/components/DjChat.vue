@@ -286,16 +286,17 @@ async function handleSend() {
 .dj-feed {
   display: flex;
   flex-direction: column;
-  flex: 0 0 auto;
+  flex: 1 1 auto;
+  height: 100%;
   overflow: hidden;
   min-height: 0;
   background: transparent;
 }
 
 .feed-messages {
-  flex: 0 1 auto;
+  flex: 1 1 auto;
   overflow-y: auto;
-  max-height: 170px;
+  min-height: 0;
   padding: 0 0 4px;
   display: flex;
   flex-direction: column;
@@ -307,13 +308,13 @@ async function handleSend() {
 
 /* ===== 消息基础 ===== */
 .msg {
-  padding: 8px 16px;
+  padding: 8px 14px;
   position: relative;
 }
 
 .msg-tag {
   font-family: var(--font-mono);
-  font-size: 8px;
+  font-size: 10px;
   color: var(--text-3);
   letter-spacing: 1.5px;
   margin-bottom: 4px;
@@ -322,7 +323,7 @@ async function handleSend() {
 
 .msg-text {
   font-family: var(--font-body);
-  font-size: 12px;
+  font-size: 14px;
   color: var(--text-2);
   line-height: 1.6;
   margin: 0;
@@ -330,7 +331,7 @@ async function handleSend() {
 
 .msg-title {
   font-family: var(--font-body);
-  font-size: 13px;
+  font-size: 14px;
   color: var(--text-primary);
   margin: 0 0 3px;
   font-weight: 650;
@@ -338,16 +339,15 @@ async function handleSend() {
 
 /* ===== DJ 转录 ===== */
 .transcript-panel {
-  margin: 4px 14px 0;
-  padding: 8px 12px;
-  border-radius: 14px;
+  flex-shrink: 0;
+  margin: 2px 2px 0;
+  padding: 8px 10px;
+  border-radius: 12px;
   background:
-    radial-gradient(ellipse at 12% 0%, rgba(216, 181, 106, 0.1), transparent 48%),
-    linear-gradient(135deg, rgba(244, 239, 228, 0.042), rgba(244, 239, 228, 0.012));
-  border: 1px solid rgba(216, 181, 106, 0.055);
+    linear-gradient(180deg, rgba(244, 239, 228, 0.035), rgba(244, 239, 228, 0.006));
+  border: 1px solid rgba(244, 239, 228, 0.035);
   box-shadow:
-    inset 0 1px 0 rgba(244, 239, 228, 0.028),
-    0 8px 20px rgba(0, 0, 0, 0.08);
+    inset 0 1px 0 rgba(244, 239, 228, 0.026);
   transition: padding 0.24s ease, background 0.24s ease, border-color 0.24s ease;
 }
 
@@ -386,7 +386,7 @@ async function handleSend() {
 
 .transcript-state {
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 650;
   color: rgba(216, 181, 106, 0.72);
   letter-spacing: 1.5px;
@@ -396,9 +396,9 @@ async function handleSend() {
   margin-left: auto;
   border: 0;
   background: transparent;
-  color: rgba(241, 233, 216, 0.46);
-  font-family: var(--font-mono);
-  font-size: 10px;
+  color: rgba(241, 233, 216, 0.58);
+  font-family: var(--font-body);
+  font-size: 12px;
   font-weight: 650;
   line-height: 1;
   cursor: pointer;
@@ -422,7 +422,7 @@ async function handleSend() {
 }
 
 .transcript-panel.expanded .transcript-copy {
-  max-height: 65px;
+  max-height: 70px;
   opacity: 1;
 }
 
@@ -435,9 +435,9 @@ async function handleSend() {
 .transcript-text {
   display: block;
   font-family: var(--font-body);
-  font-size: 13px;
-  font-weight: 560;
-  line-height: 1.66;
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1.62;
   letter-spacing: 0;
   text-shadow: 0 1px 16px rgba(0, 0, 0, 0.24);
 }
@@ -465,9 +465,9 @@ async function handleSend() {
 
 /* ===== 聊天里的 DJ 回复 ===== */
 .msg-talk {
-  margin: 4px 14px;
-  padding: 9px 12px;
-  border-radius: var(--radius);
+  margin: 4px 2px;
+  padding: 9px 10px;
+  border-radius: 12px;
   background:
     linear-gradient(135deg, rgba(216, 181, 106, 0.045), rgba(244, 239, 228, 0.012));
   border: 1px solid rgba(216, 181, 106, 0.045);
@@ -477,12 +477,12 @@ async function handleSend() {
 
 /* ===== NEXT: 后续歌曲预告 ===== */
 .msg-next {
-  margin: 0 14px 4px;
-  padding: 12px 12px;
-  border: 1px solid rgba(244, 239, 228, 0.04);
-  border-radius: 14px;
+  margin: 2px 2px 4px;
+  padding: 10px;
+  border: 1px solid rgba(244, 239, 228, 0.034);
+  border-radius: 12px;
   background:
-    linear-gradient(135deg, rgba(244, 239, 228, 0.036), rgba(112, 139, 181, 0.026));
+    linear-gradient(90deg, rgba(244, 239, 228, 0.03), rgba(112, 139, 181, 0.018), transparent);
 }
 
 .next-list {
@@ -510,8 +510,8 @@ async function handleSend() {
 
 .next-title {
   font-family: var(--font-body);
-  font-size: 13px;
-  font-weight: 650;
+  font-size: 14px;
+  font-weight: 760;
   color: var(--text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -520,7 +520,7 @@ async function handleSend() {
 
 .next-artist {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 11px;
   color: rgba(241, 233, 216, 0.56);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -548,7 +548,7 @@ async function handleSend() {
   padding: 6px 12px;
   border-radius: 12px 12px 4px 12px;
   font-family: var(--font-body);
-  font-size: 12px;
+  font-size: 13px;
   color: var(--text-primary);
   max-width: 80%;
   text-align: left;
@@ -574,13 +574,15 @@ async function handleSend() {
   display: flex;
   align-items: center;
   justify-content: center;
+  min-height: 42px;
 }
 
 .empty-text {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  color: var(--text-3);
-  letter-spacing: 2px;
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-weight: 720;
+  color: rgba(241, 233, 216, 0.58);
+  letter-spacing: 0;
   margin: 0;
 }
 
@@ -588,12 +590,12 @@ async function handleSend() {
 .feed-input {
   display: flex;
   gap: 8px;
-  margin: 4px 14px 0;
+  margin: 5px 2px 0;
   padding: 8px 10px;
-  border: 1px solid rgba(244, 239, 228, 0.045);
-  border-radius: 14px;
+  border: 1px solid rgba(244, 239, 228, 0.04);
+  border-radius: 12px;
   background:
-    linear-gradient(180deg, rgba(244, 239, 228, 0.045), rgba(244, 239, 228, 0.018));
+    linear-gradient(180deg, rgba(244, 239, 228, 0.038), rgba(244, 239, 228, 0.012));
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
   flex-shrink: 0;
@@ -608,7 +610,7 @@ async function handleSend() {
   color: var(--text-primary);
   font-family: var(--font-mono);
   font-size: 13px;
-  font-weight: 560;
+  font-weight: 650;
   outline: none;
   transition: border-color 0.15s;
 }

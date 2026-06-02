@@ -101,7 +101,7 @@ async function handlePlayFromPlan() {
 
 .plan-label {
   font-family: var(--font-mono);
-  font-size: 8px;
+  font-size: 10px;
   color: rgba(216, 181, 106, 0.76);
   letter-spacing: 1.6px;
   text-transform: uppercase;
@@ -109,15 +109,15 @@ async function handlePlayFromPlan() {
 
 .plan-title {
   font-family: var(--font-body);
-  font-size: 15px;
-  font-weight: 620;
+  font-size: 17px;
+  font-weight: 760;
   color: rgba(244, 239, 228, 0.92);
   line-height: 1.35;
 }
 
 .plan-weather {
   font-family: var(--font-body);
-  font-size: 10px;
+  font-size: 12px;
   color: rgba(241, 233, 216, 0.42);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -166,7 +166,7 @@ async function handlePlayFromPlan() {
 
 .slot-time {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 12px;
   color: var(--text-3);
   letter-spacing: 0.5px;
   font-variant-numeric: tabular-nums;
@@ -180,7 +180,7 @@ async function handlePlayFromPlan() {
 
 .slot-scene {
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: 11px;
   color: rgba(77, 216, 141, 0.8);
   letter-spacing: 1px;
   text-transform: uppercase;
@@ -188,13 +188,13 @@ async function handlePlayFromPlan() {
 
 .slot-mood {
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: 11px;
   color: rgba(216, 181, 106, 0.78);
 }
 
 .slot-desc {
   font-family: var(--font-body);
-  font-size: 11px;
+  font-size: 13px;
   color: rgba(241, 233, 216, 0.56);
   margin-top: 5px;
   line-height: 1.55;
@@ -209,8 +209,9 @@ async function handlePlayFromPlan() {
   border-radius: 8px;
   color: rgba(143, 238, 180, 0.92);
   font-family: var(--font-mono);
-  font-size: 9px;
-  letter-spacing: 1px;
+  font-size: 12px;
+  font-weight: 760;
+  letter-spacing: 0;
   cursor: pointer;
   transition: all 0.15s;
 }

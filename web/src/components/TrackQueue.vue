@@ -19,6 +19,11 @@ const store = usePlayerStore()
       <small>{{ store.currentTrack.artist }}</small>
       <p>{{ store.currentTrack.recommendReason || 'MyRadio 会根据当前场景和你的品味继续调整后续队列。' }}</p>
     </div>
+    <div v-else class="queue-empty">
+      <span class="empty-kicker">暂无队列</span>
+      <strong>先开启一段私人电台</strong>
+      <p>队列会在歌曲开始后展示，后续也会根据你的输入静默调整。</p>
+    </div>
     <div class="queue-list">
       <div
         v-for="(track, i) in store.session?.tracks"
@@ -58,7 +63,7 @@ const store = usePlayerStore()
 
 .queue-label {
   font-family: var(--font-mono);
-  font-size: 8px;
+  font-size: 10px;
   color: rgba(216, 181, 106, 0.76);
   letter-spacing: 1.6px;
   text-transform: uppercase;
@@ -67,8 +72,8 @@ const store = usePlayerStore()
 .queue-title {
   margin: 2px 0 0;
   font-family: var(--font-body);
-  font-size: 15px;
-  font-weight: 620;
+  font-size: 17px;
+  font-weight: 760;
   color: rgba(244, 239, 228, 0.92);
   line-height: 1.35;
   overflow: hidden;
@@ -78,7 +83,7 @@ const store = usePlayerStore()
 
 .queue-count {
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: 11px;
   color: rgba(241, 233, 216, 0.42);
   letter-spacing: 0.8px;
   flex-shrink: 0;
@@ -97,10 +102,45 @@ const store = usePlayerStore()
   box-shadow: inset 0 1px 0 rgba(244, 239, 228, 0.035);
 }
 
+.queue-empty {
+  margin: 80px 14px 0;
+  padding: 18px 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(244, 239, 228, 0.045);
+  background:
+    linear-gradient(180deg, rgba(244, 239, 228, 0.035), rgba(244, 239, 228, 0.01));
+  text-align: center;
+  box-shadow: inset 0 1px 0 rgba(244, 239, 228, 0.02);
+}
+
+.queue-empty .empty-kicker {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 1.4px;
+  color: rgba(216, 181, 106, 0.68);
+}
+
+.queue-empty strong {
+  display: block;
+  margin-top: 5px;
+  font-family: var(--font-body);
+  font-size: 16px;
+  color: rgba(244, 239, 228, 0.88);
+}
+
+.queue-empty p {
+  margin: 6px 0 0;
+  font-family: var(--font-body);
+  font-size: 13px;
+  line-height: 1.6;
+  color: rgba(241, 233, 216, 0.56);
+}
+
 .current-kicker {
   display: block;
   font-family: var(--font-mono);
-  font-size: 8px;
+  font-size: 10px;
   letter-spacing: 1.5px;
   color: rgba(77, 216, 141, 0.74);
   margin-bottom: 4px;
@@ -109,7 +149,7 @@ const store = usePlayerStore()
 .queue-current strong {
   display: block;
   font-family: var(--font-body);
-  font-size: 14px;
+  font-size: 16px;
   color: rgba(244, 239, 228, 0.94);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -120,7 +160,7 @@ const store = usePlayerStore()
   display: block;
   margin-top: 1px;
   font-family: var(--font-body);
-  font-size: 11px;
+  font-size: 13px;
   color: rgba(241, 233, 216, 0.56);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -130,7 +170,7 @@ const store = usePlayerStore()
 .queue-current p {
   margin: 7px 0 0;
   font-family: var(--font-body);
-  font-size: 11px;
+  font-size: 13px;
   line-height: 1.6;
   color: rgba(241, 233, 216, 0.58);
   display: -webkit-box;
@@ -171,7 +211,7 @@ const store = usePlayerStore()
 
 .item-index {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-3);
   width: 22px;
   text-align: right;
@@ -191,8 +231,8 @@ const store = usePlayerStore()
 
 .item-title {
   font-family: var(--font-body);
-  font-size: 13px;
-  font-weight: 560;
+  font-size: 14px;
+  font-weight: 720;
   color: rgba(244, 239, 228, 0.9);
   white-space: nowrap;
   overflow: hidden;
@@ -201,7 +241,7 @@ const store = usePlayerStore()
 
 .item-artist {
   font-family: var(--font-body);
-  font-size: 10px;
+  font-size: 12px;
   color: rgba(241, 233, 216, 0.44);
   white-space: nowrap;
   overflow: hidden;
@@ -211,7 +251,7 @@ const store = usePlayerStore()
 .item-reason {
   margin-top: 2px;
   font-family: var(--font-body);
-  font-size: 10px;
+  font-size: 12px;
   color: rgba(241, 233, 216, 0.38);
   white-space: nowrap;
   overflow: hidden;

@@ -113,15 +113,15 @@ function handleProgressClick(e: MouseEvent) {
   <!-- 无会话占位 -->
   <div v-else class="stage-empty">
     <div class="empty-visual">
-      <div class="empty-rings" aria-hidden="true">
-        <span class="empty-ring ring-a" />
-        <span class="empty-ring ring-b" />
-        <span class="empty-ring ring-c" />
+      <div class="empty-signal" aria-hidden="true">
+        <span class="signal-line line-a" />
+        <span class="signal-line line-b" />
+        <span class="signal-line line-c" />
+        <span class="signal-line line-d" />
+        <span class="signal-line line-e" />
+        <span class="signal-line line-f" />
       </div>
-      <div class="empty-disc">
-        <span class="empty-label">NO SIGNAL</span>
-      </div>
-      <div class="empty-beam" aria-hidden="true" />
+      <span class="empty-label">待接入私人电台</span>
     </div>
     <div class="empty-copy">
       <span class="empty-kicker">待启动</span>
@@ -133,30 +133,21 @@ function handleProgressClick(e: MouseEvent) {
 
 <style scoped>
 .radio-stage {
-  height: 430px;
-  min-height: 430px;
-  max-height: 430px;
-  padding: 10px 16px 8px;
+  height: 408px;
+  min-height: 408px;
+  max-height: 408px;
+  padding: 6px 16px 0;
   position: relative;
   overflow: hidden;
   display: grid;
-  grid-template-rows: 58px 96px 184px 16px 44px;
+  grid-template-rows: 48px 88px 170px 18px 42px;
   row-gap: 2px;
   box-sizing: border-box;
 }
 
 /* 封面氛围 */
 .stage-bg {
-  position: absolute;
-  inset: -40px;
-  background-size: cover;
-  background-position: center;
-  filter: blur(48px) brightness(0.34) saturate(1.55);
-  opacity: 0.68;
-  z-index: 0;
-  transition: background-image 0.8s ease;
-  pointer-events: none;
-  animation: ambient-drift 14s ease-in-out infinite;
+  display: none;
 }
 
 .radio-stage::after {
@@ -164,7 +155,7 @@ function handleProgressClick(e: MouseEvent) {
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(180deg, rgba(8, 9, 13, 0.02), rgba(8, 9, 13, 0.38) 62%, rgba(8, 9, 13, 0.66)),
+    linear-gradient(180deg, rgba(8, 9, 13, 0.02), rgba(8, 9, 13, 0.08) 66%, rgba(8, 9, 13, 0.02)),
     radial-gradient(circle at 70% 22%, rgba(216, 181, 106, 0.1), transparent 35%),
     radial-gradient(circle at 12% 52%, rgba(112, 139, 181, 0.08), transparent 38%);
   pointer-events: none;
@@ -193,7 +184,7 @@ function handleProgressClick(e: MouseEvent) {
 
 .set-label {
   font-family: var(--font-mono);
-  font-size: 8px;
+  font-size: 10px;
   line-height: 1.2;
   color: rgba(216, 181, 106, 0.76);
   letter-spacing: 1.6px;
@@ -202,7 +193,7 @@ function handleProgressClick(e: MouseEvent) {
 
 .set-title {
   font-family: var(--font-body);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.22;
   color: rgba(244, 239, 228, 0.9);
   font-weight: 560;
@@ -213,7 +204,7 @@ function handleProgressClick(e: MouseEvent) {
 
 .set-meta {
   font-family: var(--font-body);
-  font-size: 9px;
+  font-size: 11px;
   line-height: 1.28;
   color: rgba(241, 233, 216, 0.42);
   overflow: hidden;
@@ -238,8 +229,8 @@ function handleProgressClick(e: MouseEvent) {
 }
 
 .album-tile {
-  width: 86px;
-  height: 86px;
+  width: 82px;
+  height: 82px;
   border-radius: 14px;
   overflow: hidden;
   border: 1px solid rgba(244, 239, 228, 0.08);
@@ -282,8 +273,8 @@ function handleProgressClick(e: MouseEvent) {
 
 .track-title {
   font-family: var(--font-body);
-  font-size: 16px;
-  font-weight: 650;
+  font-size: 18px;
+  font-weight: 760;
   color: rgba(244, 239, 228, 0.94);
   white-space: nowrap;
   overflow: hidden;
@@ -293,7 +284,8 @@ function handleProgressClick(e: MouseEvent) {
 
 .track-artist {
   font-family: var(--font-body);
-  font-size: 11px;
+  font-size: 13px;
+  font-weight: 600;
   color: rgba(241, 233, 216, 0.7);
   margin-top: 2px;
   letter-spacing: 0.3px;
@@ -301,14 +293,14 @@ function handleProgressClick(e: MouseEvent) {
 
 .track-album {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 11px;
   color: var(--text-3);
   margin-top: 1px;
 }
 
 .track-waveform {
-  height: 28px;
-  margin-top: 12px;
+  height: 26px;
+  margin-top: 9px;
   display: flex;
   align-items: center;
   gap: 3px;
@@ -343,8 +335,8 @@ function handleProgressClick(e: MouseEvent) {
 
 .time {
   font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 560;
+  font-size: 11px;
+  font-weight: 700;
   color: rgba(241, 233, 216, 0.64);
   min-width: 30px;
   font-variant-numeric: tabular-nums;
@@ -352,7 +344,7 @@ function handleProgressClick(e: MouseEvent) {
 
 .bar {
   flex: 1;
-  height: 4px;
+  height: 5px;
   background: rgba(244, 239, 228, 0.09);
   border-radius: 999px;
   overflow: hidden;
@@ -377,13 +369,13 @@ function handleProgressClick(e: MouseEvent) {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 22px;
+  gap: 20px;
   min-height: 0;
 }
 
 .ctrl {
-  width: 34px;
-  height: 34px;
+  width: 32px;
+  height: 32px;
   border: 0;
   background: transparent;
   color: rgba(241, 233, 216, 0.58);
@@ -407,14 +399,14 @@ function handleProgressClick(e: MouseEvent) {
 .ctrl:disabled { opacity: 0.25; cursor: not-allowed; }
 
 .ctrl-play {
-  width: 44px;
-  height: 44px;
+  width: 40px;
+  height: 40px;
   color: rgba(244, 239, 228, 0.92);
 }
 
 .ctrl-icon {
-  width: 28px;
-  height: 28px;
+  width: 27px;
+  height: 27px;
   object-fit: contain;
   display: block;
   filter: brightness(0) saturate(100%) invert(83%) sepia(12%) saturate(398%) hue-rotate(3deg) brightness(90%) contrast(90%);
@@ -422,8 +414,8 @@ function handleProgressClick(e: MouseEvent) {
 }
 
 .ctrl-icon-play {
-  width: 42px;
-  height: 42px;
+  width: 38px;
+  height: 38px;
   opacity: 0.9;
   filter:
     brightness(0) saturate(100%) invert(92%) sepia(16%) saturate(365%) hue-rotate(7deg) brightness(98%) contrast(95%)
@@ -442,9 +434,9 @@ function handleProgressClick(e: MouseEvent) {
   z-index: 1;
   width: 100%;
   min-width: 0;
-  height: 184px;
-  min-height: 184px;
-  max-height: 184px;
+  height: 170px;
+  min-height: 170px;
+  max-height: 170px;
   overflow: hidden;
   border: 0;
   background:
@@ -458,19 +450,16 @@ function handleProgressClick(e: MouseEvent) {
 
 /* 空状态 */
 .stage-empty {
-  height: 430px;
-  min-height: 430px;
-  max-height: 430px;
-  padding: 10px 16px 12px;
+  height: 408px;
+  min-height: 408px;
+  max-height: 408px;
+  padding: 10px 16px 0;
   position: relative;
   overflow: hidden;
   display: grid;
   grid-template-rows: 1fr auto;
   align-items: center;
-  background:
-    radial-gradient(circle at 50% 18%, rgba(216, 181, 106, 0.08), transparent 18%),
-    radial-gradient(circle at 50% 46%, rgba(241, 233, 216, 0.05), transparent 34%),
-    linear-gradient(180deg, rgba(8, 9, 13, 0.86), rgba(8, 9, 13, 0.98));
+  background: transparent;
 }
 
 .stage-empty::before {
@@ -478,83 +467,70 @@ function handleProgressClick(e: MouseEvent) {
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(circle at 50% 22%, rgba(216, 181, 106, 0.12), transparent 22%),
-    radial-gradient(circle at 16% 48%, rgba(77, 216, 141, 0.08), transparent 30%),
-    linear-gradient(180deg, rgba(244, 239, 228, 0.02), transparent 34%, rgba(8, 9, 13, 0) 64%);
+    radial-gradient(ellipse at 50% 30%, rgba(216, 181, 106, 0.08), transparent 32%),
+    radial-gradient(ellipse at 26% 48%, rgba(77, 216, 141, 0.06), transparent 34%);
   pointer-events: none;
 }
 
 .empty-visual {
   position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.empty-rings {
-  position: absolute;
-  inset: 0;
+  z-index: 1;
   display: grid;
-  place-items: center;
+  gap: 10px;
+  align-items: center;
+  justify-content: center;
+  justify-items: center;
+  transform: translateY(12px);
 }
 
-.empty-ring {
-  position: absolute;
-  border-radius: 50%;
-  border: 1px solid rgba(244, 239, 228, 0.06);
-  box-shadow: inset 0 0 0 1px rgba(244, 239, 228, 0.01);
-}
-
-.ring-a {
-  width: 132px;
-  height: 132px;
-  opacity: 0.38;
-}
-
-.ring-b {
-  width: 182px;
-  height: 182px;
-  opacity: 0.2;
-}
-
-.ring-c {
-  width: 240px;
-  height: 240px;
-  opacity: 0.1;
-}
-
-.empty-disc {
-  width: 88px;
-  height: 88px;
-  border-radius: 50%;
-  border: 1px solid rgba(244, 239, 228, 0.08);
-  background:
-    radial-gradient(circle at 50% 38%, rgba(244, 239, 228, 0.05), transparent 28%),
-    rgba(14, 17, 23, 0.78);
+.empty-signal {
+  width: 170px;
+  height: 56px;
   display: flex;
   align-items: center;
   justify-content: center;
-  opacity: 0.56;
-  box-shadow:
-    inset 0 1px 0 rgba(244, 239, 228, 0.02),
-    0 0 0 1px rgba(255, 255, 255, 0.01);
+  gap: 8px;
+  border-radius: 0;
+  background: transparent;
+  opacity: 0.82;
 }
 
-.empty-beam {
-  position: absolute;
-  width: 180px;
-  height: 36px;
-  bottom: 18px;
+.signal-line {
+  width: 4px;
+  min-height: 10px;
   border-radius: 999px;
-  background: linear-gradient(90deg, transparent, rgba(216, 181, 106, 0.08), transparent);
-  filter: blur(10px);
+  background: linear-gradient(180deg, rgba(241, 233, 216, 0.68), rgba(216, 181, 106, 0.36));
+  box-shadow: 0 0 12px rgba(216, 181, 106, 0.08);
+}
+
+.line-a,
+.line-f { height: 16px; opacity: 0.42; }
+.line-b,
+.line-e { height: 30px; opacity: 0.56; }
+.line-c { height: 46px; opacity: 0.72; }
+.line-d { height: 38px; opacity: 0.64; }
+
+.signal-line {
+  animation: idle-signal 2.8s ease-in-out infinite;
+}
+
+.line-b { animation-delay: 0.12s; }
+.line-c { animation-delay: 0.24s; }
+.line-d { animation-delay: 0.36s; }
+.line-e { animation-delay: 0.48s; }
+.line-f { animation-delay: 0.6s; }
+
+@keyframes idle-signal {
+  0%, 100% { transform: scaleY(0.82); }
+  50% { transform: scaleY(1.08); }
 }
 
 .empty-label {
-  font-family: var(--font-brand);
-  font-size: 8px;
-  color: rgba(241, 233, 216, 0.56);
-  letter-spacing: 1.2px;
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(241, 233, 216, 0.46);
+  letter-spacing: 0;
 }
 
 .empty-copy {
@@ -563,19 +539,19 @@ function handleProgressClick(e: MouseEvent) {
   display: grid;
   gap: 4px;
   justify-items: center;
-  padding-bottom: 18px;
+  padding-bottom: 0;
 }
 
 .empty-kicker {
   font-family: var(--font-mono);
-  font-size: 8px;
+  font-size: 10px;
   color: rgba(216, 181, 106, 0.7);
   letter-spacing: 1.8px;
 }
 
 .empty-title {
   font-family: var(--font-body);
-  font-size: 13px;
+  font-size: 15px;
   color: rgba(244, 239, 228, 0.84);
   letter-spacing: 0.8px;
 }
@@ -584,7 +560,7 @@ function handleProgressClick(e: MouseEvent) {
   max-width: 270px;
   text-align: center;
   font-family: var(--font-body);
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.5;
   color: rgba(241, 233, 216, 0.46);
 }

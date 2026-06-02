@@ -66,22 +66,19 @@ const tabs = [
 .bottom-tabs {
   display: flex;
   margin: 0 0 0;
-  padding: 7px 14px calc(10px + env(safe-area-inset-bottom, 0px));
-  border-top: 1px solid rgba(244, 239, 228, 0.032);
+  padding: 8px 0 0;
+  border-top: 1px solid rgba(244, 239, 228, 0.045);
   border-left: 0;
   border-right: 0;
   border-bottom: 0;
-  border-radius: 0 0 28px 28px;
-  background:
-    linear-gradient(180deg, rgba(9, 11, 15, 0.7), rgba(5, 6, 9, 0.96));
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
+  border-radius: 0;
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   flex-shrink: 0;
   position: relative;
   z-index: 1;
-  box-shadow:
-    inset 0 1px 0 rgba(244, 239, 228, 0.03),
-    0 10px 22px rgba(0, 0, 0, 0.14);
+  box-shadow: none;
 }
 
 .tab-item {
@@ -89,9 +86,9 @@ const tabs = [
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
-  min-height: 50px;
-  padding: 8px 0 5px;
+  gap: 5px;
+  min-height: 48px;
+  padding: 8px 0 4px;
   cursor: pointer;
   transition: all 0.15s;
   border: none;
@@ -111,8 +108,8 @@ const tabs = [
 }
 
 .tab-icon {
-  width: 17px;
-  height: 17px;
+  width: 18px;
+  height: 18px;
   fill: currentColor;
   color: rgba(143, 138, 131, 0.72);
   transition: color 0.15s, transform 0.15s;
@@ -120,12 +117,12 @@ const tabs = [
 }
 
 .tab-label {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 560;
-  color: rgba(178, 170, 160, 0.78);
-  letter-spacing: 1px;
-  text-transform: uppercase;
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 760;
+  color: rgba(178, 170, 160, 0.82);
+  letter-spacing: 0;
+  text-transform: none;
   transition: color 0.15s;
 }
 

@@ -35,9 +35,9 @@ function handleVolumeChange(device: PlayDevice, e: Event) {
 <template>
   <div class="device-selector">
     <button class="device-trigger" @click="open = !open">
-      <span class="device-icon">{{ store.currentDevice?.deviceType === 'MOCK_SPEAKER' ? '🔊' : '💻' }}</span>
+      <span class="device-icon" :class="{ online: store.currentDevice?.onlineStatus === 'ONLINE' }" />
       <span class="device-name">{{ formatDeviceName(store.currentDevice) }}</span>
-      <span class="device-arrow" :class="{ open }">▾</span>
+      <span class="device-arrow" :class="{ open }" aria-hidden="true" />
     </button>
 
     <div v-if="open" class="device-dropdown">
@@ -98,7 +98,17 @@ function handleVolumeChange(device: PlayDevice, e: Event) {
 }
 
 .device-icon {
-  font-size: 10px;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--text-muted);
+  box-shadow: none;
+  flex-shrink: 0;
+}
+
+.device-icon.online {
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent-glow);
 }
 
 .device-name {
@@ -109,11 +119,16 @@ function handleVolumeChange(device: PlayDevice, e: Event) {
 }
 
 .device-arrow {
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg) translateY(-1px);
   transition: transform 0.15s;
 }
 
 .device-arrow.open {
-  transform: rotate(180deg);
+  transform: rotate(225deg) translateY(-1px);
 }
 
 .device-dropdown {

@@ -172,7 +172,7 @@ onMounted(async () => {
 
 .taste-label {
   font-family: var(--font-mono);
-  font-size: 8px;
+  font-size: 10px;
   color: rgba(216, 181, 106, 0.76);
   letter-spacing: 1.6px;
   display: block;
@@ -182,8 +182,8 @@ onMounted(async () => {
 .taste-title {
   margin: 2px 0 9px;
   font-family: var(--font-body);
-  font-size: 15px;
-  font-weight: 620;
+  font-size: 17px;
+  font-weight: 760;
   color: rgba(244, 239, 228, 0.92);
 }
 
@@ -198,9 +198,10 @@ onMounted(async () => {
   border: 1px solid rgba(244, 239, 228, 0.055);
   border-radius: 16px;
   color: rgba(241, 233, 216, 0.42);
-  font-family: var(--font-mono);
-  font-size: 9px;
-  letter-spacing: 1px;
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 760;
+  letter-spacing: 0;
   cursor: pointer;
   transition: all 0.15s;
 }
@@ -247,7 +248,7 @@ onMounted(async () => {
 
 .paper-kicker {
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: 10px;
   letter-spacing: 1.4px;
   color: rgba(77, 216, 141, 0.74);
 }
@@ -255,7 +256,7 @@ onMounted(async () => {
 .paper-copy {
   margin: 7px 0 0;
   font-family: var(--font-body);
-  font-size: 11px;
+  font-size: 13px;
   line-height: 1.65;
   color: rgba(241, 233, 216, 0.58);
 }
@@ -272,14 +273,14 @@ onMounted(async () => {
   border: 1px solid rgba(244, 239, 228, 0.08);
   border-radius: 999px;
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 12px;
   color: rgba(241, 233, 216, 0.62);
   background: rgba(244, 239, 228, 0.035);
 }
 
 .section-title {
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: 10px;
   color: var(--text-3);
   letter-spacing: 1px;
   margin-bottom: 6px;
@@ -296,8 +297,9 @@ onMounted(async () => {
   background: rgba(244, 239, 228, 0.035);
   border: 1px solid rgba(244, 239, 228, 0.065);
   color: rgba(241, 233, 216, 0.62);
-  font-family: var(--font-mono);
-  font-size: 11px;
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 650;
   border-radius: 999px;
 }
 
@@ -328,15 +330,15 @@ onMounted(async () => {
 
 .meta-key {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 12px;
   color: var(--warm);
   min-width: 80px;
   flex-shrink: 0;
 }
 
 .meta-val {
-  font-family: var(--font-mono);
-  font-size: 11px;
+  font-family: var(--font-body);
+  font-size: 13px;
   color: var(--text-2);
 }
 
@@ -358,7 +360,7 @@ onMounted(async () => {
 
 .rank-num {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-3);
   min-width: 20px;
   font-variant-numeric: tabular-nums;
@@ -373,7 +375,8 @@ onMounted(async () => {
 
 .rank-name {
   font-family: var(--font-body);
-  font-size: 12px;
+  font-size: 14px;
+  font-weight: 700;
   color: rgba(244, 239, 228, 0.9);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -382,13 +385,13 @@ onMounted(async () => {
 
 .rank-sub {
   font-family: var(--font-body);
-  font-size: 10px;
+  font-size: 12px;
   color: rgba(241, 233, 216, 0.42);
 }
 
 .rank-count {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 12px;
   color: var(--text-3);
 }
 </style>
