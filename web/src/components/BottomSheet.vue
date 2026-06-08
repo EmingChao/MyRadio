@@ -2,6 +2,7 @@
 const props = defineProps<{
   visible: boolean
   title?: string
+  variant?: 'default' | 'tall'
 }>()
 
 const emit = defineEmits<{ (e: 'close'): void }>()
@@ -15,7 +16,7 @@ function onMaskClick() {
   <Teleport to="body">
     <Transition name="sheet">
       <div v-if="visible" class="sheet-overlay" @click.self="onMaskClick">
-        <div class="sheet-container">
+        <div class="sheet-container" :class="{ 'sheet-container-tall': props.variant === 'tall' }">
           <div class="sheet-handle" />
           <div v-if="title" class="sheet-header">
             <span class="sheet-title">{{ title }}</span>
@@ -59,6 +60,10 @@ function onMaskClick() {
     0 0 0 1px rgba(255, 255, 255, 0.018);
 }
 
+.sheet-container-tall {
+  max-height: min(88vh, 760px);
+}
+
 .sheet-handle {
   width: 36px;
   height: 4px;
@@ -84,10 +89,12 @@ function onMaskClick() {
   flex: 1;
   overflow-y: auto;
   padding: 12px 16px 24px;
+  overscroll-behavior: contain;
 }
 
 @media (max-width: 768px) {
   .sheet-overlay {
+    align-items: flex-end;
     padding: 0;
   }
 
@@ -96,6 +103,14 @@ function onMaskClick() {
     max-height: 72vh;
     border-left: 0;
     border-right: 0;
+  }
+
+  .sheet-container-tall {
+    max-height: calc(100dvh - 54px);
+  }
+
+  .sheet-container-tall .sheet-body {
+    padding-bottom: max(18px, env(safe-area-inset-bottom));
   }
 }
 

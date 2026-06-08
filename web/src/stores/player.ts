@@ -1,8 +1,9 @@
 import { defineStore } from 'pinia';
 import { ref, computed, watch } from 'vue';
-import { reportPlayback, refreshSessionTracks, getCurrentSession, synthesizeTts, getTrackLyrics, continueRadioSession } from '../api';
-import { resolveDjSpeechBeforeTrack } from './player-tts-sequence';
+import { reportPlayback, refreshSessionTracks, getCurrentSession, synthesizeTts, getTrackLyrics, continueRadioSession, getSessionTtsItems } from '../api';
+import { resolveDjSpeechBeforeTrack, resolvePostSpeechVolumeSteps, resolveRevealVolume, resolveTtsWaitTimeoutMs, shouldClientSynthesizeSpeech, shouldMarkSpeechAsSpoken, shouldPrepareSpeechBeforeManualPlay, shouldPrefetchSpeechForIndex, shouldStartOverlapFromTtsProgress, shouldStartTrackBeforeFadeIn } from './player-tts-sequence';
 import { resolveTtsOutputGain } from './player-tts-volume';
+import { mergeAppendedTracks, shouldApplyContinuationResult, shouldRequestQueueContinuation } from './player-queue-continuation';
 
 export interface RadioTrack {
   trackId: number;
@@ -11,6 +12,8 @@ export interface RadioTrack {
   album: string | null;
   coverUrl: string | null;
   playUrl: string | null;
+  sourceScope?: string;
+  source_type?: string;
   lyrics?: string;
   djScript: string;
   recommendReason: string;
@@ -31,6 +34,7 @@ export interface TtsItem {
   hash: string;
   audioUrl: string;
   style?: TtsStyle;
+  configKey?: string;
 }
 
 export interface TtsStyle {
@@ -53,6 +57,8 @@ export const usePlayerStore = defineStore('player', () => {
   const TRACK_WAVEFORM_SIZE = 18;
   const SPEECH_DUCKING_VOLUME = 0.16;
   const SPEECH_OVERLAP_VOLUME = 0.22;
+  const TTS_WAIT_TIMEOUT_MS = 9000;
+  const FIRST_SEGMENT_TTS_WAIT_TIMEOUT_MS = 25000;
   // 电台会话
   const session = ref<RadioSession | null>(null);
   // 当前播放索引
@@ -81,6 +87,10 @@ export const usePlayerStore = defineStore('player', () => {
   const ttsAudio = new Audio();
   ttsAudio.preload = 'auto';
 
+  // 下一首歌曲预加载实例，只预热少量后续音频，避免切歌时重新建立连接。
+  const preloadedTrackAudio = new Audio();
+  preloadedTrackAudio.preload = 'auto';
+
   // TTS 映射：text -> audioUrl
   const ttsMap = ref<Map<string, string>>(new Map());
   const ttsStyleMap = ref<Map<string, TtsStyle>>(new Map());
@@ -93,6 +103,11 @@ export const usePlayerStore = defineStore('player', () => {
   let pendingSpeechTimer: ReturnType<typeof setTimeout> | null = null;
   const synthesizingTexts = new Set<string>();
   const loadingLyricsTrackIds = new Set<number>();
+  const sessionTtsFetches = new Set<number>();
+  let preloadedTrackUrl: string | null = null;
+  let ttsConfigGeneration = 0;
+  let activeTtsConfigKey: string | null = null;
+  let trackAudioRetryKey: string | null = null;
   // 控制旧异步播放流程失效，避免快速切歌时串音。
   let playbackToken = 0;
   let ttsOverlapTimer: ReturnType<typeof setTimeout> | null = null;
@@ -138,6 +153,10 @@ export const usePlayerStore = defineStore('player', () => {
     void handleAudioEnded();
   });
 
+  audio.addEventListener('error', () => {
+    void handleTrackAudioError();
+  });
+
   /**
    * 处理歌曲自然结束：优先进入下一首，队列末尾则尝试自动续播。
    */
@@ -176,6 +195,10 @@ export const usePlayerStore = defineStore('player', () => {
     stopTrackWaveformCapture();
   });
 
+  preloadedTrackAudio.addEventListener('error', () => {
+    preloadedTrackUrl = null;
+  });
+
   // TTS 播放结束后再启动当前音乐，保证 DJ 语音发生在音乐前。
   ttsAudio.addEventListener('ended', () => {
     if (ttsOverlapTimer) {
@@ -186,16 +209,23 @@ export const usePlayerStore = defineStore('player', () => {
     stopSpeechProgressCapture();
     djSpeaking.value = false;
     currentSpeechProgress.value = 1;
-    if (ttsOverlapStarted) {
-      void fadeVolume(audio, 1.0, 700);
+    if (shouldStartTrackBeforeFadeIn(ttsOverlapStarted)) {
+      void revealTrackFromStart(0.52, 850).then(() => fadeVolume(audio, 1.0, 2800));
     } else {
-      void fadeVolume(audio, 1.0, 800).then(() => resumeTrackPlayback());
+      void restoreTrackVolumeAfterSpeech();
     }
     ttsOverlapStarted = false;
   });
 
   ttsAudio.addEventListener('timeupdate', () => {
     updateSpeechProgress();
+    if (
+      currentTtsShouldOverlap
+      && currentTtsOverlapToken !== null
+      && shouldStartOverlapFromTtsProgress(ttsAudio.currentTime, ttsAudio.duration, ttsOverlapStarted)
+    ) {
+      startTrackOverlap(currentTtsOverlapToken);
+    }
   });
 
   ttsAudio.addEventListener('loadedmetadata', () => {
@@ -221,7 +251,38 @@ export const usePlayerStore = defineStore('player', () => {
     audio.play().catch(() => {
       // 自动播放被浏览器阻止，等待用户交互
       isPlaying.value = false;
+    }).finally(() => {
+      preloadUpcomingTrackAudio();
     });
+  }
+
+  /**
+   * 当前歌曲音频加载失败时刷新播放地址并重试一次。
+   * 网易云 CDN URL 有时效性，预热或切歌时可能遇到 403。
+   */
+  async function handleTrackAudioError() {
+    const track = currentTrack.value;
+    if (!track?.playUrl || !session.value) return;
+
+    const retryKey = `${track.trackId}:${track.playUrl}`;
+    if (trackAudioRetryKey === retryKey) {
+      isPlaying.value = false;
+      return;
+    }
+
+    trackAudioRetryKey = retryKey;
+    try {
+      await refreshTracks();
+      const refreshedTrack = currentTrack.value;
+      if (!refreshedTrack?.playUrl || refreshedTrack.trackId !== track.trackId) return;
+      audio.src = refreshedTrack.playUrl;
+      audio.load();
+      await audio.play();
+      preloadUpcomingTrackAudio();
+    } catch (err) {
+      console.warn('[Audio] 刷新播放地址后重试失败:', err);
+      isPlaying.value = false;
+    }
   }
 
   /**
@@ -241,6 +302,8 @@ export const usePlayerStore = defineStore('player', () => {
 
     audio.play().catch(() => {
       isPlaying.value = false;
+    }).finally(() => {
+      preloadUpcomingTrackAudio();
     });
   }
 
@@ -269,22 +332,33 @@ export const usePlayerStore = defineStore('player', () => {
 
     if (decision.kind === 'opening') {
       openingPending.value = false;
-    } else {
-      spokenSegueKeys.add(speechKey);
     }
 
     const started = playTts(decision.text, { after: 'play-track', token });
+    if (shouldMarkSpeechAsSpoken(decision.kind, started)) {
+      spokenSegueKeys.add(speechKey);
+    }
     if (!started) {
       pendingSpeechText.value = decision.text;
-      void ensureTtsReady(decision.text, token);
+      void ensureTtsReady(decision.text, token, decision.kind);
+      void fetchReadyTtsItemsForSession();
       if (pendingSpeechTimer) clearTimeout(pendingSpeechTimer);
+      const waitTimeoutMs = resolveTtsWaitTimeoutMs(
+        decision.kind,
+        currentIndex.value,
+        TTS_WAIT_TIMEOUT_MS,
+        FIRST_SEGMENT_TTS_WAIT_TIMEOUT_MS,
+      );
       pendingSpeechTimer = setTimeout(() => {
         if (pendingSpeechText.value === decision.text && token === playbackToken) {
           pendingSpeechText.value = null;
+          currentSpeechText.value = decision.text;
+          currentSpeechProgress.value = 1;
           resumeTrackPlayback();
         }
-      }, 3500);
+      }, waitTimeoutMs);
     }
+    preheatUpcomingPlayback();
   }
 
   // 监听 currentIndex 变化，自动准备新歌曲
@@ -293,6 +367,7 @@ export const usePlayerStore = defineStore('player', () => {
       prepareTrackPlayback();
       void ensureCurrentTrackLyrics();
       void ensureQueueContinuation('near-end');
+      preheatUpcomingPlayback();
     }
   });
 
@@ -310,9 +385,11 @@ export const usePlayerStore = defineStore('player', () => {
     pendingSpeechText.value = null;
     spokenSegueKeys.clear();
     stopTts();
-    // 延迟一帧，等待 WebSocket 订阅和 TTS_READY 先进入正常链路。
-    setTimeout(() => prepareTrackPlayback(), 50);
+    unloadTrackAudio();
     void ensureCurrentTrackLyrics();
+    void fetchReadyTtsItemsForSession();
+    void preheatCurrentSpeech();
+    preheatUpcomingPlayback();
   }
 
   // 上报跳过当前歌曲
@@ -366,8 +443,8 @@ export const usePlayerStore = defineStore('player', () => {
   function togglePlay() {
     if (!currentTrack.value?.playUrl) return;
     if (audio.paused) {
-      // 首次播放或切歌后 src 尚未对齐时，重新走当前歌曲的准备流程，避免恢复上一首。
-      if (!isAudioLoadedForCurrentTrack()) {
+      // 首次播放、切歌后 src 未对齐，或当前独白还没真正播过时，都先走 DJ 独白准备流程。
+      if (shouldPrepareSpeechBeforeManualPlay(isAudioLoadedForCurrentTrack(), hasUnspokenCurrentSpeech())) {
         prepareTrackPlayback();
         return;
       }
@@ -420,26 +497,25 @@ export const usePlayerStore = defineStore('player', () => {
    */
   function appendQueue(newTracks: RadioTrack[]) {
     if (!session.value || newTracks.length === 0) return;
-    const existing = new Set(session.value.tracks.map(track => track.trackId));
-    const uniqueTracks = newTracks.filter(track => !existing.has(track.trackId));
-    session.value.tracks = [...session.value.tracks, ...uniqueTracks];
+    session.value.tracks = mergeAppendedTracks(session.value.tracks, newTracks);
+    preheatUpcomingPlayback();
   }
 
   /**
    * 队列快结束或已经结束时自动追加下一段。
    */
   async function ensureQueueContinuation(reason: 'near-end' | 'ended'): Promise<boolean> {
-    if (!session.value) return false;
+    const requestSessionId = session.value?.sessionId;
+    if (!requestSessionId) return false;
     if (extendingQueuePromise) return extendingQueuePromise;
-    const remaining = trackCount.value - currentIndex.value - 1;
-    if (reason === 'near-end' && remaining > 2) return false;
+    if (!shouldRequestQueueContinuation(trackCount.value, currentIndex.value, reason)) return false;
 
     extendingQueue.value = true;
     extendingQueuePromise = (async () => {
       try {
-        const res = await continueRadioSession(session.value!.sessionId, 8);
+        const res = await continueRadioSession(requestSessionId, 5);
         const appendedTracks = res?.data?.appendedTracks || [];
-        if (res.code === 0 && appendedTracks.length > 0) {
+        if (res.code === 0 && shouldApplyContinuationResult(session.value?.sessionId, requestSessionId, appendedTracks.length)) {
           appendQueue(appendedTracks);
           return true;
         }
@@ -458,12 +534,15 @@ export const usePlayerStore = defineStore('player', () => {
 
   // 设置 TTS 音频映射（从 WebSocket TTS_READY 事件获取）
   function setTtsItems(items: TtsItem[]) {
+    const generation = ttsConfigGeneration;
     for (const item of items) {
+      if (activeTtsConfigKey && item.configKey && item.configKey !== activeTtsConfigKey) continue;
       if (item.audioUrl) {
         ttsMap.value.set(item.text, item.audioUrl);
         if (item.style) ttsStyleMap.value.set(item.text, item.style);
       }
     }
+    if (generation !== ttsConfigGeneration) return;
     if (pendingSpeechText.value && ttsMap.value.has(pendingSpeechText.value)) {
       const text = pendingSpeechText.value;
       pendingSpeechText.value = null;
@@ -471,21 +550,31 @@ export const usePlayerStore = defineStore('player', () => {
         clearTimeout(pendingSpeechTimer);
         pendingSpeechTimer = null;
       }
+      const decision = resolveDjSpeechBeforeTrack(session.value, currentIndex.value, openingPending.value);
+      if (decision?.text === text && shouldMarkSpeechAsSpoken(decision.kind, true)) {
+        spokenSegueKeys.add(getSpeechKey(decision.kind, text));
+      }
       playTts(text, { after: 'play-track', token: playbackToken });
     }
+    preheatUpcomingPlayback();
   }
 
   /**
    * 主动确保某段 DJ 文案存在 TTS 音频。
    * WebSocket 可能在页面刷新、恢复旧会话或网络抖动时错过，这里补一条前端兜底链路。
    */
-  async function ensureTtsReady(text: string, token: number) {
+  async function ensureTtsReady(text: string, token: number, kind: 'opening' | 'segue' = 'segue') {
+    if (!shouldClientSynthesizeSpeech('current-waiting')) return;
     if (!text || ttsMap.value.has(text) || synthesizingTexts.has(text)) return;
+    const generation = ttsConfigGeneration;
     synthesizingTexts.add(text);
     try {
-      const res = await synthesizeTts(text, buildTtsStyleContext());
+      const res = await synthesizeTts(text, buildTtsStyleContext(kind));
+      if (generation !== ttsConfigGeneration) return;
       const audioUrl = res?.data?.audioUrl;
       const hash = res?.data?.hash;
+      const configKey = res?.data?.configKey;
+      if (activeTtsConfigKey && configKey && configKey !== activeTtsConfigKey) return;
       if (audioUrl) {
         ttsMap.value.set(text, audioUrl);
         if (res?.data?.style) ttsStyleMap.value.set(text, res.data.style);
@@ -494,6 +583,10 @@ export const usePlayerStore = defineStore('player', () => {
           if (pendingSpeechTimer) {
             clearTimeout(pendingSpeechTimer);
             pendingSpeechTimer = null;
+          }
+          const decision = resolveDjSpeechBeforeTrack(session.value, currentIndex.value, openingPending.value);
+          if (decision?.text === text && shouldMarkSpeechAsSpoken(decision.kind, true)) {
+            spokenSegueKeys.add(getSpeechKey(decision.kind, text));
           }
           playTts(text, { after: 'play-track', token });
         }
@@ -505,6 +598,109 @@ export const usePlayerStore = defineStore('player', () => {
     } finally {
       synthesizingTexts.delete(text);
     }
+  }
+
+  /**
+   * 补拉当前 session 下已经生成好的 TTS，避免错过 WebSocket 推送后只能切歌时现场合成。
+   */
+  async function fetchReadyTtsItemsForSession() {
+    const currentSession = session.value;
+    if (!currentSession || sessionTtsFetches.has(currentSession.sessionId)) return;
+    const generation = ttsConfigGeneration;
+
+    sessionTtsFetches.add(currentSession.sessionId);
+    try {
+      const res = await getSessionTtsItems(currentSession.sessionId, currentSession.say);
+      if (generation !== ttsConfigGeneration) return;
+      const items = res?.data?.ttsItems || [];
+      if (res.code === 0 && items.length > 0) {
+        setTtsItems(items);
+      }
+    } catch (err) {
+      console.warn('[TTS] 查询会话已生成语音失败:', err);
+    } finally {
+      sessionTtsFetches.delete(currentSession.sessionId);
+    }
+  }
+
+  /**
+   * 预热后续 1-2 首歌的 DJ 独白和下一首音频，减少主动切歌时的等待感。
+   */
+  function preheatUpcomingPlayback() {
+    prefetchUpcomingTts();
+    preloadUpcomingTrackAudio();
+  }
+
+  /**
+   * 提前合成当前歌曲或开场白独白，让用户第一次点播放时更可能直接听到 DJ。
+   */
+  function preheatCurrentSpeech() {
+    const decision = resolveDjSpeechBeforeTrack(session.value, currentIndex.value, openingPending.value);
+    if (!decision?.text || ttsMap.value.has(decision.text) || synthesizingTexts.has(decision.text)) return;
+
+    // 新会话返回后，先补拉后端后台已经生成好的 TTS；用户真正点击播放时再兜底合成当前段。
+    void fetchReadyTtsItemsForSession();
+  }
+
+  /**
+   * 提前合成下一首/下下首独白。只做少量预热，避免 TTS 后台任务堆积。
+   */
+  function prefetchUpcomingTts() {
+    if (!session.value) return;
+    if (!shouldClientSynthesizeSpeech('background-preheat')) {
+      void fetchReadyTtsItemsForSession();
+      return;
+    }
+
+    for (let index = currentIndex.value + 1; index <= currentIndex.value + 2; index++) {
+      if (!shouldPrefetchSpeechForIndex(trackCount.value, currentIndex.value, index)) continue;
+      const decision = resolveDjSpeechBeforeTrack(session.value, index, false);
+      if (!decision?.text || ttsMap.value.has(decision.text) || synthesizingTexts.has(decision.text)) continue;
+      void ensureTtsReady(decision.text, playbackToken, decision.kind);
+    }
+  }
+
+  /**
+   * 预加载下一首歌曲的浏览器音频缓存。
+   */
+  function preloadUpcomingTrackAudio() {
+    const nextTrack = session.value?.tracks[currentIndex.value + 1];
+    if (!nextTrack?.playUrl || preloadedTrackUrl === nextTrack.playUrl) return;
+
+    preloadedTrackUrl = nextTrack.playUrl;
+    preloadedTrackAudio.pause();
+    preloadedTrackAudio.src = nextTrack.playUrl;
+    preloadedTrackAudio.load();
+  }
+
+  /**
+   * TTS 配置变更后，让下一首开始使用新配置重新生成。
+   */
+  function handleTtsConfigChanged() {
+    ttsConfigGeneration++;
+    ttsMap.value = new Map();
+    ttsStyleMap.value = new Map();
+    synthesizingTexts.clear();
+    pendingSpeechText.value = null;
+    if (pendingSpeechTimer) {
+      clearTimeout(pendingSpeechTimer);
+      pendingSpeechTimer = null;
+    }
+    sessionTtsFetches.clear();
+
+    // 不打断当前正在说的 DJ，只让后续独白用新配置预热。
+    if (!djSpeaking.value) {
+      stopTts();
+    }
+    preheatUpcomingPlayback();
+    void fetchReadyTtsItemsForSession();
+  }
+
+  /**
+   * 设置当前 TTS 配置签名，用于过滤旧后台任务推回的语音。
+   */
+  function setActiveTtsConfigKey(configKey: string | null) {
+    activeTtsConfigKey = configKey;
   }
 
   /**
@@ -532,6 +728,11 @@ export const usePlayerStore = defineStore('player', () => {
   // 音量渐变工具函数
   function fadeVolume(target: HTMLAudioElement, to: number, duration: number): Promise<void> {
     return new Promise(resolve => {
+      if (document.hidden || duration <= 0) {
+        target.volume = Math.max(0, Math.min(1, to));
+        resolve();
+        return;
+      }
       const from = target.volume;
       const diff = to - from;
       if (Math.abs(diff) < 0.01) { target.volume = to; resolve(); return; }
@@ -539,8 +740,10 @@ export const usePlayerStore = defineStore('player', () => {
       function step(now: number) {
         const elapsed = now - start;
         const progress = Math.min(elapsed / duration, 1);
-        // ease-out 曲线
-        const eased = 1 - Math.pow(1 - progress, 2);
+        // ease-in-out 曲线，避免歌曲从低音量突然冲到全音量。
+        const eased = progress < 0.5
+          ? 2 * progress * progress
+          : 1 - Math.pow(-2 * progress + 2, 2) / 2;
         target.volume = Math.max(0, Math.min(1, from + diff * eased));
         if (progress < 1) {
           requestAnimationFrame(step);
@@ -567,29 +770,27 @@ export const usePlayerStore = defineStore('player', () => {
     pendingSpeechText.value = null;
     currentTtsOverlapToken = token;
     currentTtsShouldOverlap = options?.after === 'play-track';
-    // 先渐降音乐音量，再播放 TTS
-    fadeVolume(audio, SPEECH_DUCKING_VOLUME, 600).then(() => {
-      if (token !== playbackToken) return;
-      ttsAudio.src = url;
-      applyTtsPlaybackStyle(text);
-      setupWaveformCapture();
-      applyTtsOutputGain();
-      ttsAudio.play().then(() => {
-        updateSpeechProgress();
-        startSpeechProgressCapture();
-        startWaveformCapture();
-        scheduleTrackOverlapBeforeTtsEnd(token, currentTtsShouldOverlap);
-      }).catch(() => {
-        stopWaveformCapture();
-        stopSpeechProgressCapture();
-        djSpeaking.value = false;
-        currentSpeechProgress.value = 0;
-        if (options?.after === 'play-track') {
-          resumeTrackPlayback();
-        } else {
-          fadeVolume(audio, 1.0, 400);
-        }
-      });
+    if (!audio.paused) void fadeVolume(audio, SPEECH_DUCKING_VOLUME, 600);
+    if (token !== playbackToken) return false;
+
+    ttsAudio.src = url;
+    applyTtsPlaybackStyle(text);
+    setupWaveformCapture();
+    applyTtsOutputGain();
+    ttsAudio.play().then(() => {
+      updateSpeechProgress();
+      startSpeechProgressCapture();
+      startWaveformCapture();
+    }).catch(() => {
+      stopWaveformCapture();
+      stopSpeechProgressCapture();
+      djSpeaking.value = false;
+      currentSpeechProgress.value = 0;
+      if (options?.after === 'play-track') {
+        resumeTrackPlayback();
+      } else {
+        fadeVolume(audio, 1.0, 400);
+      }
     });
     return true;
   }
@@ -636,6 +837,16 @@ export const usePlayerStore = defineStore('player', () => {
    */
   function getSpeechKey(kind: string, text: string): string {
     return `${kind}:${currentIndex.value}:${text}`;
+  }
+
+  /**
+   * 判断当前歌曲或开场白是否还有应播未播的 DJ 独白。
+   */
+  function hasUnspokenCurrentSpeech(): boolean {
+    const decision = resolveDjSpeechBeforeTrack(session.value, currentIndex.value, openingPending.value);
+    if (!decision?.text) return false;
+    if (decision.kind === 'opening') return openingPending.value;
+    return !spokenSegueKeys.has(getSpeechKey(decision.kind, decision.text));
   }
 
   /**
@@ -724,35 +935,60 @@ export const usePlayerStore = defineStore('player', () => {
   }
 
   /**
-   * 在 DJ 独白结束前几秒淡入音乐，形成自然的电台过渡。
+   * 在 DJ 独白最后几秒淡入音乐，形成自然的电台过渡。
    */
   function scheduleTrackOverlapBeforeTtsEnd(token: number, shouldPlayTrack: boolean) {
     if (!shouldPlayTrack) return;
     if (ttsOverlapTimer) clearTimeout(ttsOverlapTimer);
-    ttsOverlapStarted = false;
 
     const durationMs = Number.isFinite(ttsAudio.duration) ? ttsAudio.duration * 1000 : 0;
     if (!durationMs || durationMs <= 3200) return;
 
     ttsOverlapTimer = setTimeout(() => {
-      if (token !== playbackToken || !djSpeaking.value || ttsAudio.paused) return;
-      const track = currentTrack.value;
-      if (!track?.playUrl) return;
-
-      ttsOverlapStarted = true;
-      if (!isAudioLoadedForCurrentTrack()) {
-        audio.src = track.playUrl;
-        audio.load();
-        setupTrackWaveformCapture();
-      }
-      audio.volume = 0;
-      audio.play()
-        // DJ 仍在讲话时只把音乐铺到低音量，等独白结束再恢复正常音量。
-        .then(() => fadeVolume(audio, SPEECH_OVERLAP_VOLUME, 1200))
-        .catch(() => {
-          ttsOverlapStarted = false;
-        });
+      startTrackOverlap(token);
     }, Math.max(0, durationMs - 3000));
+  }
+
+  /**
+   * 启动歌曲和 DJ 独白的最后几秒重叠。
+   */
+  function startTrackOverlap(token: number) {
+    if (token !== playbackToken || !djSpeaking.value || ttsAudio.paused || ttsOverlapStarted) return;
+    ttsOverlapStarted = true;
+    revealTrackFromStart(SPEECH_OVERLAP_VOLUME, 1200);
+  }
+
+  /**
+   * 从歌曲开头启动并淡入，DJ 独白期间不提前静音播放歌曲。
+   */
+  function revealTrackFromStart(targetVolume: number, fadeMs: number): Promise<void> {
+    const track = currentTrack.value;
+    if (!track?.playUrl) return Promise.resolve();
+
+    if (!isAudioLoadedForCurrentTrack()) {
+      audio.src = track.playUrl;
+      audio.load();
+      setupTrackWaveformCapture();
+    }
+    audio.currentTime = 0;
+    audio.volume = resolveRevealVolume(targetVolume, document.hidden);
+    audio.muted = false;
+    return audio.play()
+      .then(() => fadeVolume(audio, targetVolume, fadeMs))
+      .catch(() => {
+        isPlaying.value = false;
+      }).finally(() => {
+        preloadUpcomingTrackAudio();
+      });
+  }
+
+  /**
+   * DJ 独白结束后分段恢复歌曲音量，让电台过渡更自然。
+   */
+  async function restoreTrackVolumeAfterSpeech() {
+    for (const step of resolvePostSpeechVolumeSteps()) {
+      await fadeVolume(audio, step.volume, step.durationMs);
+    }
   }
 
   /**
@@ -768,8 +1004,10 @@ export const usePlayerStore = defineStore('player', () => {
    * 卸载主音频，切歌等待 TTS 或新地址时不保留上一首 src。
    */
   function unloadTrackAudio() {
+    audio.muted = false;
     audio.removeAttribute('src');
     audio.load();
+    trackAudioRetryKey = null;
     currentTime.value = 0;
     duration.value = 0;
     stopTrackWaveformCapture();
@@ -895,14 +1133,18 @@ export const usePlayerStore = defineStore('player', () => {
   /**
    * 当前 TTS 兜底合成使用的情绪上下文。
    */
-  function buildTtsStyleContext(): Record<string, any> {
+  function buildTtsStyleContext(kind: 'opening' | 'segue' = 'segue'): Record<string, any> {
     const track = currentTrack.value;
+    const isExplore = track?.sourceScope === 'explore' || track?.source_type === 'NETEASE_EXPLORE';
     return {
       scene: session.value?.sessionTitle || '',
       mood: extractMoodFromSessionTitle(session.value?.sessionTitle),
       title: track?.title,
       artist: track?.artist,
       album: track?.album,
+      isOpening: kind === 'opening',
+      kind: kind === 'opening' ? 'opening' : (isExplore ? 'explorePick' : 'trackIntro'),
+      sourceScope: isExplore ? 'explore' : 'library',
     };
   }
 
@@ -965,6 +1207,8 @@ export const usePlayerStore = defineStore('player', () => {
         // 刷新播放地址（CDN 链接可能已过期）
         refreshTracks();
         void ensureQueueContinuation('near-end');
+        void fetchReadyTtsItemsForSession();
+        preheatUpcomingPlayback();
       }
     } catch {
       // 静默失败
@@ -995,6 +1239,11 @@ export const usePlayerStore = defineStore('player', () => {
     openingPending.value = false;
     pendingSpeechText.value = null;
     spokenSegueKeys.clear();
+    sessionTtsFetches.clear();
+    preloadedTrackUrl = null;
+    preloadedTrackAudio.pause();
+    preloadedTrackAudio.removeAttribute('src');
+    preloadedTrackAudio.load();
   }
 
   // 初始化时自动恢复最近会话
@@ -1030,6 +1279,10 @@ export const usePlayerStore = defineStore('player', () => {
     appendQueue,
     ensureQueueContinuation,
     setTtsItems,
+    fetchReadyTtsItemsForSession,
+    preheatUpcomingPlayback,
+    handleTtsConfigChanged,
+    setActiveTtsConfigKey,
     playTts,
     ensureCurrentTrackLyrics,
     refreshTracks,

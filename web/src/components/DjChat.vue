@@ -1,16 +1,12 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, onMounted, onUnmounted, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { usePlayerStore } from '../stores/player'
 import { sendChatMessage } from '../api'
-import { useWebSocket } from '../composables/useWebSocket'
-import type { WsEvent } from '../composables/useWebSocket'
 
 const store = usePlayerStore()
 const chatInput = ref('')
 const sending = ref(false)
 const chatHistory = ref<Array<{ role: string; content: string; type?: string }>>([])
-
-const { subscribe, onEvent, offEvent } = useWebSocket()
 
 const upcomingTracks = computed(() => {
   if (!store.session) return []
@@ -42,38 +38,6 @@ const currentReadCount = computed(() => {
 })
 
 const shouldExpandTranscript = computed(() => transcriptExpanded.value || store.djSpeaking)
-
-let eventId: number | null = null
-
-function handleWsEvent(event: WsEvent) {
-  if (event.type === 'QUEUE_UPDATED' && event.data.tracks) {
-    if (event.data.append) {
-      store.appendQueue(event.data.tracks)
-    } else if (event.data.soft) {
-      store.replaceQueue(event.data.tracks)
-    } else {
-      store.updateQueue(event.data.tracks)
-    }
-    if (!event.data.soft) {
-      chatHistory.value.push({ role: 'system', content: '队列已更新', type: 'queue-update' })
-    }
-  } else if (event.type === 'TTS_READY' && event.data.ttsItems) {
-    store.setTtsItems(event.data.ttsItems)
-  }
-}
-
-onMounted(() => {
-  eventId = onEvent(handleWsEvent)
-  if (store.session) subscribe(store.session.sessionId)
-})
-
-watch(() => store.session?.sessionId, (id) => {
-  if (id) subscribe(id)
-})
-
-onUnmounted(() => {
-  if (eventId !== null) offEvent(eventId)
-})
 
 function handleTranscriptManualScroll() {
   userReadingTranscript.value = true

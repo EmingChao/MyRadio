@@ -470,7 +470,7 @@ html[data-theme='light'] .transcript-state,
 html[data-theme='light'] .msg-tag,
 html[data-theme='light'] .section-title,
 html[data-theme='light'] .paper-kicker {
-  color: rgba(126, 82, 37, 0.82);
+  color: rgba(142, 91, 38, 0.9);
 }
 
 html[data-theme='light'] .brand-name,
@@ -504,7 +504,109 @@ html[data-theme='light'] .slot-desc,
 html[data-theme='light'] .meta-val,
 html[data-theme='light'] .msg-text,
 html[data-theme='light'] .time {
-  color: rgba(63, 51, 40, 0.78);
+  color: rgba(54, 45, 37, 0.86);
+}
+
+html[data-theme='light'] .queue-empty,
+html[data-theme='light'] .stage-empty,
+html[data-theme='light'] .taste-paper,
+html[data-theme='light'] .queue-current {
+  background:
+    radial-gradient(circle at 14% 10%, rgba(188, 138, 72, 0.09), transparent 35%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(248, 246, 240, 0.82));
+  border-color: rgba(90, 74, 58, 0.1);
+  box-shadow:
+    0 14px 34px rgba(70, 63, 54, 0.05),
+    inset 0 1px 0 rgba(255, 255, 255, 0.78);
+}
+
+html[data-theme='light'] .queue-empty .empty-kicker,
+html[data-theme='light'] .empty-kicker,
+html[data-theme='light'] .empty-label {
+  color: rgba(142, 91, 38, 0.78);
+}
+
+html[data-theme='light'] .queue-empty strong,
+html[data-theme='light'] .empty-title {
+  color: rgba(42, 34, 27, 0.94);
+}
+
+html[data-theme='light'] .queue-empty p,
+html[data-theme='light'] .empty-subtitle,
+html[data-theme='light'] .empty-text {
+  color: rgba(72, 61, 51, 0.72);
+}
+
+html[data-theme='light'] .plan-weather,
+html[data-theme='light'] .queue-count,
+html[data-theme='light'] .rank-num,
+html[data-theme='light'] .meta-key,
+html[data-theme='light'] .slot-time {
+  color: rgba(91, 98, 106, 0.82);
+}
+
+html[data-theme='light'] .taste-tab {
+  color: rgba(89, 78, 67, 0.58);
+  background: rgba(255, 255, 255, 0.72);
+  border-color: rgba(90, 74, 58, 0.08);
+}
+
+html[data-theme='light'] .taste-tab.active {
+  color: rgba(31, 142, 93, 0.82);
+  background: rgba(31, 142, 93, 0.12);
+  border-color: rgba(31, 142, 93, 0.2);
+}
+
+html[data-theme='light'] .tag,
+html[data-theme='light'] .paper-tags span {
+  color: rgba(65, 55, 46, 0.76);
+  background: rgba(255, 255, 255, 0.8);
+  border-color: rgba(90, 74, 58, 0.1);
+}
+
+html[data-theme='light'] .tag-signal {
+  color: rgba(31, 142, 93, 0.82);
+  background: rgba(31, 142, 93, 0.11);
+  border-color: rgba(31, 142, 93, 0.22);
+}
+
+html[data-theme='light'] .paper-tags span {
+  color: rgba(142, 91, 38, 0.76);
+}
+
+html[data-theme='light'] .plan-slot.current {
+  background:
+    radial-gradient(circle at 12% 8%, rgba(31, 142, 93, 0.11), transparent 34%),
+    linear-gradient(90deg, rgba(31, 142, 93, 0.08), rgba(255, 255, 255, 0.72));
+  border-color: rgba(31, 142, 93, 0.2);
+}
+
+html[data-theme='light'] .slot-scene,
+html[data-theme='light'] .slot-play {
+  color: rgba(31, 142, 93, 0.86);
+}
+
+html[data-theme='light'] .slot-play {
+  background: rgba(31, 142, 93, 0.1);
+  border-color: rgba(31, 142, 93, 0.22);
+}
+
+html[data-theme='light'] .slot-mood {
+  color: rgba(154, 106, 47, 0.82);
+}
+
+html[data-theme='light'] .bottom-tabs {
+  border-top-color: rgba(60, 53, 45, 0.08);
+}
+
+html[data-theme='light'] .tab-label,
+html[data-theme='light'] .tab-icon {
+  color: rgba(67, 59, 50, 0.64);
+}
+
+html[data-theme='light'] .tab-item.active .tab-label,
+html[data-theme='light'] .tab-item.active .tab-icon {
+  color: rgba(28, 24, 20, 0.94);
 }
 
 html[data-theme='light'] .transcript-toggle {
@@ -755,4 +857,83 @@ html[data-theme='light'] .vol-slider::-webkit-slider-thumb {
 
 html[data-theme='light'] .feed-input-field {
   font-weight: 650;
+}
+
+/* 浅色主题最终可读性兜底：队列 / 计划 / 品味页面必须在白底上保持足够对比 */
+html[data-theme='light'] .tab-label,
+html[data-theme='light'] .tab-icon {
+  color: rgba(67, 59, 50, 0.7);
+}
+
+html[data-theme='light'] .tab-item.active .tab-label,
+html[data-theme='light'] .tab-item.active .tab-icon {
+  color: rgba(25, 22, 19, 0.96);
+}
+
+html[data-theme='light'] .queue-empty,
+html[data-theme='light'] .stage-empty,
+html[data-theme='light'] .taste-paper,
+html[data-theme='light'] .queue-current,
+html[data-theme='light'] .rank-row {
+  background:
+    radial-gradient(circle at 14% 10%, rgba(188, 138, 72, 0.08), transparent 35%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(248, 246, 240, 0.84));
+  border-color: rgba(90, 74, 58, 0.11);
+}
+
+html[data-theme='light'] .queue-empty strong,
+html[data-theme='light'] .empty-title,
+html[data-theme='light'] .rank-name {
+  color: rgba(37, 31, 26, 0.95);
+}
+
+html[data-theme='light'] .queue-empty p,
+html[data-theme='light'] .empty-subtitle,
+html[data-theme='light'] .empty-text,
+html[data-theme='light'] .paper-copy,
+html[data-theme='light'] .slot-desc,
+html[data-theme='light'] .meta-val,
+html[data-theme='light'] .rank-sub,
+html[data-theme='light'] .rank-count {
+  color: rgba(69, 58, 49, 0.78);
+}
+
+html[data-theme='light'] .plan-weather,
+html[data-theme='light'] .queue-count,
+html[data-theme='light'] .rank-num,
+html[data-theme='light'] .slot-time,
+html[data-theme='light'] .meta-key {
+  color: rgba(83, 91, 99, 0.86);
+}
+
+html[data-theme='light'] .taste-tab {
+  color: rgba(78, 68, 58, 0.7);
+  background: rgba(255, 255, 255, 0.78);
+  border-color: rgba(90, 74, 58, 0.1);
+}
+
+html[data-theme='light'] .taste-tab.active {
+  color: rgba(31, 142, 93, 0.9);
+  background: rgba(31, 142, 93, 0.13);
+  border-color: rgba(31, 142, 93, 0.24);
+}
+
+html[data-theme='light'] .tag,
+html[data-theme='light'] .paper-tags span {
+  color: rgba(65, 55, 46, 0.82);
+  background: rgba(255, 255, 255, 0.84);
+  border-color: rgba(90, 74, 58, 0.12);
+}
+
+html[data-theme='light'] .tag-signal {
+  color: rgba(31, 142, 93, 0.9);
+  background: rgba(31, 142, 93, 0.12);
+  border-color: rgba(31, 142, 93, 0.24);
+}
+
+html[data-theme='light'] .plan-slot.current {
+  background:
+    radial-gradient(circle at 12% 8%, rgba(31, 142, 93, 0.12), transparent 34%),
+    linear-gradient(90deg, rgba(31, 142, 93, 0.09), rgba(255, 255, 255, 0.78));
+  border-color: rgba(31, 142, 93, 0.24);
 }

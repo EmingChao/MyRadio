@@ -8,17 +8,44 @@ const client = new Anthropic({
 });
 
 const MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-20250514';
-const MAX_RETRIES = 3;
+const MAX_RETRIES = 2;
 const RETRY_DELAY_MS = 3000;
+
+interface ClaudeCallOptions {
+  maxTokens?: number;
+}
 
 function sleep(ms: number) {
   return new Promise(r => setTimeout(r, ms));
 }
 
 /**
+ * 判断 Claude/MiMo 代理错误是否适合在客户端层自动重试。
+ */
+export function isClaudeRetryableError(err: any): boolean {
+  const status = err?.status || err?.statusCode;
+  const message = String(err?.message || '').toLowerCase();
+
+  return status === 502 || status === 503 || status === 429
+    || err?.code === 'ECONNRESET' || err?.code === 'ETIMEDOUT'
+    || message.includes('timeout') || message.includes('timed out');
+}
+
+/**
+ * 从 Claude/MiMo 返回内容中提取可解析文本，跳过 thinking 块。
+ */
+export function extractClaudeText(content: any[]): string {
+  return (content || [])
+    .filter(block => block?.type === 'text' && typeof block.text === 'string')
+    .map(block => block.text)
+    .join('\n')
+    .trim();
+}
+
+/**
  * 调用 Claude API，返回结构化 JSON（含重试逻辑）
  */
-export async function callClaude(systemPrompt: string, userMessage: string): Promise<any> {
+export async function callClaude(systemPrompt: string, userMessage: string, options: ClaudeCallOptions = {}): Promise<any> {
   let lastError: Error | null = null;
   const start = Date.now();
 
@@ -26,13 +53,14 @@ export async function callClaude(systemPrompt: string, userMessage: string): Pro
     try {
       const response = await client.messages.create({
         model: MODEL,
-        max_tokens: 4096,
+        max_tokens: options.maxTokens || 2400,
+        thinking: { type: 'disabled' },
         system: systemPrompt,
         messages: [{ role: 'user', content: userMessage }],
       });
 
       const elapsed = Date.now() - start;
-      const text = response.content[0].type === 'text' ? response.content[0].text : '';
+      const text = extractClaudeText(response.content as any[]);
 
       // 尝试提取 JSON（兼容 markdown 代码块包裹）
       const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/) || [null, text];
@@ -42,10 +70,7 @@ export async function callClaude(systemPrompt: string, userMessage: string): Pro
       return JSON.parse(jsonStr);
     } catch (err: any) {
       lastError = err;
-      const status = err?.status || err?.statusCode;
-      const isRetryable = status === 502 || status === 503 || status === 429
-        || err?.code === 'ECONNRESET' || err?.code === 'ETIMEDOUT'
-        || err?.message?.includes('timeout');
+      const isRetryable = isClaudeRetryableError(err);
 
       console.error(`[Claude] 第 ${attempt} 次调用失败 (${Date.now() - start}ms): ${err.message}${isRetryable ? ' 可重试' : ' 不可重试'}`);
 

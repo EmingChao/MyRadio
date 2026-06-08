@@ -33,6 +33,24 @@ export function initDb() {
     CREATE INDEX IF NOT EXISTS idx_track_user_liked ON radio_track(user_id, liked);
     CREATE INDEX IF NOT EXISTS idx_track_source_id ON radio_track(source_track_id);
 
+    -- 歌曲事实缓存表：为 AI DJ 提供稳定、可信、可压缩的歌曲介绍材料
+    CREATE TABLE IF NOT EXISTS radio_track_fact (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      track_id INTEGER NOT NULL UNIQUE,
+      source_track_id TEXT NOT NULL,
+      detail_json TEXT,
+      wiki_summary TEXT,
+      lyric_summary TEXT,
+      comment_summary TEXT,
+      music_quality_summary TEXT,
+      fact_status TEXT NOT NULL DEFAULT 'PENDING',
+      last_fetch_time TEXT,
+      create_time TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+      modified_time TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_track_fact_source ON radio_track_fact(source_track_id);
+    CREATE INDEX IF NOT EXISTS idx_track_fact_status ON radio_track_fact(fact_status);
+
     -- 用户音乐画像表
     CREATE TABLE IF NOT EXISTS radio_user_profile (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -155,6 +173,19 @@ export function initDb() {
       modified_user_no INTEGER
     );
     CREATE INDEX IF NOT EXISTS idx_device_user ON radio_play_device(user_id, device_type);
+
+    -- TTS 语音配置表
+    CREATE TABLE IF NOT EXISTS radio_tts_config (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL UNIQUE,
+      mode TEXT NOT NULL DEFAULT 'clone',
+      ref_audio_path TEXT,
+      voice TEXT,
+      dialect TEXT,
+      create_time TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+      modified_time TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_tts_config_user ON radio_tts_config(user_id);
   `);
 
   // 迁移：为 radio_user_profile 添加新列（已存在则忽略）
@@ -173,6 +204,11 @@ export function initDb() {
   // 迁移：为 radio_track 添加歌词列
   try {
     db.exec(`ALTER TABLE radio_track ADD COLUMN lyrics TEXT`);
+  } catch {}
+
+  // 迁移：为 radio_tts_config 添加音色列
+  try {
+    db.exec(`ALTER TABLE radio_tts_config ADD COLUMN voice TEXT`);
   } catch {}
 
   // 种子数据：默认设备

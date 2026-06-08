@@ -1,8 +1,10 @@
 import { Router } from 'express';
-import { synthesizeSpeech, getTtsFilePath, getTextHash } from '../services/tts';
+import { synthesizeSpeech, getTtsFilePath, getTextHash, getTtsConfigKey } from '../services/tts';
 import { resolveTtsStyle } from '../services/tts-style';
+import { getTtsConfig } from '../stores/tts-config';
 
 const router = Router();
+const USER_ID = 443961717;
 
 /**
  * POST /api/tts/synthesize — 合成语音
@@ -17,18 +19,20 @@ router.post('/synthesize', async (req, res) => {
     }
 
     const style = resolveTtsStyle(context || {});
-    const filePath = await synthesizeSpeech(text, style);
+    const ttsConfig = getTtsConfig(USER_ID);
+    const filePath = await synthesizeSpeech(text, style, ttsConfig);
     if (!filePath) {
       return res.json({ code: 0, data: { hash: null, audioUrl: null } });
     }
 
-    const hash = getTextHash(text, style);
+    const hash = getTextHash(text, style, ttsConfig);
     res.json({
       code: 0,
       data: {
         hash,
         audioUrl: `/api/tts/audio/${hash}`,
         style,
+        configKey: getTtsConfigKey(ttsConfig),
       },
     });
   } catch (err: any) {

@@ -29,6 +29,8 @@ export async function createRadioSession(params: {
   scene?: string;
   mood?: string;
   extraPrompt?: string;
+  refreshMode?: 'new-session';
+  avoidTrackIds?: number[];
 }) {
   return request('/radio/session/create', {
     method: 'POST',
@@ -103,6 +105,15 @@ export async function synthesizeTts(text: string, context?: Record<string, any>)
     method: 'POST',
     body: JSON.stringify({ text, context }),
   });
+}
+
+/** 查询当前会话已生成的 TTS 语音 */
+export async function getSessionTtsItems(sessionId: number, say?: string) {
+  const query = new URLSearchParams();
+  if (say) query.set('say', say);
+  // TTS 是后台陆续生成的，禁用缓存避免拿到旧的空结果。
+  query.set('_', String(Date.now()));
+  return request(`/radio/session/${sessionId}/tts?${query.toString()}`, { cache: 'no-store' });
 }
 
 /** 获取今日电台计划 */
@@ -203,4 +214,33 @@ export async function getTrackLyrics(trackId: number) {
 /** 获取当前天气 */
 export async function getCurrentWeather() {
   return request('/weather/current');
+}
+
+/** 获取 TTS 语音配置 */
+export async function getTtsConfig() {
+  return request('/tts-config');
+}
+
+/** 更新 TTS 语音配置 */
+export async function updateTtsConfig(params: { mode?: string; refAudioPath?: string | null; voice?: string | null; dialect?: string | null }) {
+  return request('/tts-config', {
+    method: 'PUT',
+    body: JSON.stringify(params),
+  });
+}
+
+/** 上传克隆参考音频（二进制文件） */
+export async function uploadTtsVoice(file: File) {
+  const res = await fetch(`/api/tts-config/voice?name=${encodeURIComponent(file.name)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/octet-stream' },
+    body: file,
+  });
+  const text = await res.text();
+  let data: any = null;
+  if (text.trim()) {
+    try { data = JSON.parse(text); } catch { throw new Error('接口返回格式异常'); }
+  }
+  if (!res.ok) throw new Error(data?.message || `上传失败 ${res.status}`);
+  return data;
 }

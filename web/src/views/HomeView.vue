@@ -18,10 +18,11 @@ import Toast from '../components/Toast.vue'
 import BottomSheet from '../components/BottomSheet.vue'
 import BottomTabs from '../components/BottomTabs.vue'
 import DeviceSelector from '../components/DeviceSelector.vue'
+import TtsConfigPanel from '../components/TtsConfigPanel.vue'
 import SongDetailDrawer from '../components/SongDetailDrawer.vue'
 
 const store = usePlayerStore()
-const { onEvent, offEvent } = useWebSocket()
+const { subscribe, onEvent, offEvent } = useWebSocket()
 const { bgStyle: globalCoverStyle } = useCoverBg()
 useMediaKeyboardControls()
 
@@ -59,12 +60,26 @@ let wsEventId: number | null = null
 function handleWsEvent(event: WsEvent) {
   if (event.type === 'SLOT_CHANGED' && event.data) {
     store.setSlotChanged(event.data)
+  } else if (event.type === 'TTS_READY' && event.data?.ttsItems) {
+    store.setTtsItems(event.data.ttsItems)
+  } else if (event.type === 'QUEUE_UPDATED' && event.data?.tracks) {
+    if (event.data.append) {
+      store.appendQueue(event.data.tracks)
+    } else if (event.data.soft) {
+      store.replaceQueue(event.data.tracks)
+    } else {
+      store.updateQueue(event.data.tracks)
+    }
   }
 }
 
 onMounted(() => {
   window.addEventListener('resize', onResize)
   wsEventId = onEvent(handleWsEvent)
+  if (store.session) {
+    subscribe(store.session.sessionId)
+    void store.fetchReadyTtsItemsForSession()
+  }
   applyTheme(theme.value)
 })
 onUnmounted(() => {
@@ -80,6 +95,13 @@ watch(theme, (value) => {
     // 忽略存储失败
   }
 }, { immediate: true })
+
+watch(() => store.session?.sessionId, (id) => {
+  if (!id) return
+  subscribe(id)
+  void store.fetchReadyTtsItemsForSession()
+  store.preheatUpcomingPlayback()
+})
 
 function showToast(message: string, type: 'info' | 'success' | 'error' = 'info') {
   const id = ++toastId
@@ -112,7 +134,7 @@ async function handleAcceptSlotChange() {
   }
 }
 
-async function handleCreate() {
+async function handleCreate(options?: { refreshMode?: 'new-session'; avoidTrackIds?: number[] }) {
   if (creating.value) return
   creating.value = true
   createPhase.value = '召回曲库...'
@@ -124,6 +146,8 @@ async function handleCreate() {
       scene: scene.value,
       mood: mood.value,
       extraPrompt: extraPrompt.value || undefined,
+      refreshMode: options?.refreshMode,
+      avoidTrackIds: options?.avoidTrackIds,
     })
     if (res.code === 0) {
       store.setSession(res.data)
@@ -139,6 +163,22 @@ async function handleCreate() {
     creating.value = false
     createPhase.value = ''
   }
+}
+
+function handleCreateClick() {
+  void handleCreate()
+}
+
+async function handleRestartRadio() {
+  if (creating.value || !store.session) return
+  const avoidTrackIds = store.session.tracks.map(track => track.trackId)
+  showSettings.value = false
+  showToast('正在重新编排一组新的 MyRadio', 'info')
+  store.clearSession()
+  await handleCreate({
+    refreshMode: 'new-session',
+    avoidTrackIds,
+  })
 }
 
 async function handleMoodShortcut(nextMood: string) {
@@ -278,7 +318,7 @@ function setTheme(value: 'dark' | 'light') {
               <button
                 class="dock-send"
                 :disabled="creating"
-                @click="handleCreate"
+                @click="handleCreateClick"
               >{{ btnText }}</button>
             </div>
           </div>
@@ -289,11 +329,16 @@ function setTheme(value: 'dark' | 'light') {
     </div>
 
     <!-- Settings Sheet -->
-    <BottomSheet :visible="showSettings" title="设置" @close="showSettings = false">
+    <BottomSheet :visible="showSettings" title="设置" variant="tall" @close="showSettings = false">
       <div class="settings-sheet">
         <div class="setting-row">
           <span class="setting-label">播放设备</span>
           <DeviceSelector />
+        </div>
+        <!-- TTS 语音音色配置 -->
+        <div class="setting-block">
+          <span class="setting-label">语音音色</span>
+          <TtsConfigPanel />
         </div>
         <div class="setting-row setting-theme">
           <span class="setting-label">主题外观</span>
@@ -310,7 +355,7 @@ function setTheme(value: 'dark' | 'light') {
         <button class="setting-item" @click="showSettings = false; showLogin = true">
           <span class="setting-label">网易云登录</span>
         </button>
-        <button v-if="store.session" class="setting-item setting-danger" @click="showSettings = false; store.clearSession()">
+        <button v-if="store.session" class="setting-item setting-danger" @click="handleRestartRadio">
           <span class="setting-label">重新开始电台</span>
         </button>
       </div>
@@ -674,7 +719,7 @@ function setTheme(value: 'dark' | 'light') {
 .settings-sheet {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 7px;
 }
 
 .setting-row,
@@ -683,13 +728,26 @@ function setTheme(value: 'dark' | 'light') {
   align-items: center;
   justify-content: space-between;
   min-height: 46px;
-  padding: 10px 12px;
+  padding: 9px 12px;
   background:
     linear-gradient(180deg, rgba(244, 239, 228, 0.055), rgba(244, 239, 228, 0.026)),
     var(--surface);
   border: 1px solid var(--line);
   border-radius: 14px;
   color: var(--text-secondary);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
+}
+
+.setting-block {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 9px 12px;
+  background:
+    linear-gradient(180deg, rgba(244, 239, 228, 0.055), rgba(244, 239, 228, 0.026)),
+    var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
 }
 

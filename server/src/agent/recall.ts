@@ -3,6 +3,7 @@ import type { Track } from '../types';
 import fs from 'fs';
 import path from 'path';
 import { getUserProfile } from '../stores/profile';
+import { buildSongFactsForPrompt } from '../services/track-facts';
 
 /**
  * 候选歌曲召回算法
@@ -21,7 +22,7 @@ interface ScoredTrack {
   track: Track;
   score: number;
   reason: string;
-  sourceScope?: 'library' | 'explore';
+  sourceScope?: string;
 }
 
 /**
@@ -182,10 +183,32 @@ export function formatCandidatesForClaude(scored: ScoredTrack[]) {
     liked: s.track.liked === 1,
     sourceScope: s.sourceScope || (s.track.source_type === 'NETEASE_EXPLORE' ? 'explore' : 'library'),
     reason: s.reason,
-    sourceHint: s.sourceScope === 'explore' || s.track.source_type === 'NETEASE_EXPLORE'
-      ? '主动探索候选：这首可能不在用户原歌单里，需要说明和用户品味、当前场景的连接。'
-      : undefined,
+    songFacts: buildSongFactsForPrompt((s.track as any).track_fact),
+    sourceHint: getCandidateSourceHint(s),
   }));
+}
+
+/**
+ * 给模型的候选来源提示。这里不暴露接口名，而是告诉 DJ 应该如何自然解释来源。
+ */
+function getCandidateSourceHint(scored: ScoredTrack): string | undefined {
+  const sourceScope = scored.sourceScope || (scored.track.source_type === 'NETEASE_EXPLORE' ? 'explore' : 'library');
+  if (sourceScope === 'explore' || scored.track.source_type === 'NETEASE_EXPLORE') {
+    return '主动探索候选：这首可能不在用户原歌单里，需要说明和用户品味、当前场景的连接。';
+  }
+  if (sourceScope === 'daily' || scored.track.source_type === 'NETEASE_DAILY_RECOMMEND') {
+    return '今日推荐候选：这首来自今天的推荐信号，适合解释为什么它和用户当下场景、今天的听感节奏有关。';
+  }
+  if (sourceScope === 'similar' || scored.track.source_type === 'NETEASE_SIMI_SONG') {
+    return '相似延展候选：这首是顺着相近听感扩展出来的，需要说明它和用户熟悉的声音质地如何接近，又有什么新角度。';
+  }
+  if (sourceScope === 'fm' || scored.track.source_type === 'NETEASE_PERSONAL_FM') {
+    return '私人发现候选：这首带有即时发现感，适合少量穿插，需要说明它为什么像是顺着用户最近听感自然冒出来的。';
+  }
+  if (sourceScope === 'vector') {
+    return '整体听感延展候选：这首不是只像某一首歌，而是更接近当前这组歌共同的气质。';
+  }
+  return undefined;
 }
 
 /**

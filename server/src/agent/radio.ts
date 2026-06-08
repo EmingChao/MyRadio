@@ -5,12 +5,27 @@ import { callClaude } from './claude';
 import { RADIO_DJ_SYSTEM_PROMPT, buildRadioPrompt } from './prompts';
 import { recallCandidates, formatCandidatesForClaude } from './recall';
 import { recallExploreCandidates } from './explore';
+import {
+  mergeNeteaseSourceCandidates,
+  pickNeteaseSimilarSeeds,
+  pickNeteaseVectorSeeds,
+  recallDailyRecommendCandidates,
+  recallPersonalFmCandidates,
+  recallSimilarSongCandidates,
+  recallVectorSongCandidates,
+} from './netease-sources';
 import { buildUserContext, buildMusicProfile } from './context';
 import { buildFallbackTrackCopy, buildOpeningCopy, buildTrackVoiceIntro, enrichTrackCopyIfNeeded, getSceneLabel } from './dj-copy';
 import { AppError, ErrorCode, toAppError } from '../utils/errors';
 import { getSession, getSessionTracks, getSessionTracksWithDetail, insertSessionTracks } from '../stores/session';
 import { song_url } from 'NeteaseCloudMusicApi';
 import type { Track } from '../types';
+import { enrichTracksWithFacts } from '../services/track-facts';
+
+/**
+ * 兼容旧测试和旧调用点：保留原来的 mergeRadioCandidates 导出。
+ */
+export { mergeRadioCandidates } from './netease-sources';
 
 /**
  * 电台核心编排：召回 → Claude 重排 → 校验 → 保存 → 返回
@@ -20,6 +35,8 @@ interface CreateSessionParams {
   scene?: string;
   mood?: string;
   extraPrompt?: string;
+  refreshMode?: 'new-session';
+  avoidTrackIds?: number[];
 }
 
 interface SessionResult {
@@ -36,6 +53,8 @@ interface SessionResult {
     album: string | null;
     coverUrl: string | null;
     playUrl: string | null;
+    sourceScope?: string;
+    source_type?: string;
     djScript: string;
     recommendReason: string;
     segue: string;
@@ -83,18 +102,51 @@ export async function createRadioSession(params: CreateSessionParams): Promise<S
     musicProfile,
     limit: 6,
   });
-  const mergedScored = mergeRadioCandidates(scored, exploreScored);
-  const candidates = formatCandidatesForClaude(mergedScored);
-  console.log(`[Radio] 探索推荐 ${Date.now() - t}ms，新增候选 ${exploreScored.length} 首，合并候选 ${mergedScored.length} 首`);
+  const dailyScored = await recallDailyRecommendCandidates(userId, 6);
+  const similarSeeds = pickNeteaseSimilarSeeds(scored, 4);
+  const similarScored = similarSeeds.length > 0
+    ? await recallSimilarSongCandidates(userId, similarSeeds[0], 6)
+    : [];
+  const fmScored = await recallPersonalFmCandidates(userId, 3);
+  const vectorSeedIds = pickNeteaseVectorSeeds(scored, 12);
+  const vectorScored = vectorSeedIds
+    ? await recallVectorSongCandidates(userId, vectorSeedIds, 4)
+    : [];
+  const restartContext = buildRestartContext(params);
+  const mergedScored = prepareSessionCandidates(
+    mergeNeteaseSourceCandidates({
+      libraryScored: scored,
+      dailyScored,
+      similarScored,
+      fmScored,
+      vectorScored,
+      exploreScored,
+      limit: 100,
+    }),
+    restartContext,
+  );
+  const promptScored = selectPromptCandidates(mergedScored, 18);
+  await enrichTracksWithFacts(promptScored, 6);
+  const candidates = formatCandidatesForClaude(promptScored);
+  console.log(`[Radio] 探索推荐 ${Date.now() - t}ms，新增候选 ${exploreScored.length} 首，合并候选 ${mergedScored.length} 首，模型候选 ${promptScored.length} 首`);
 
   // 3. 调用 Claude
   t = Date.now();
-  const userMessage = buildRadioPrompt({ userContext, musicProfile, candidates });
+  const userMessage = buildRadioPrompt({
+    userContext,
+    musicProfile,
+    candidates,
+    trackCountRange: { min: 5, max: 6 },
+    copyMode: 'selection',
+    sessionDirective: restartContext.isRestart
+      ? '这是用户主动重新开始电台。请保持当前场景和品味气质，但不要复刻上一组队列；优先从候选前段里选择没在上一组出现过的歌曲，像真正重新编排过的一期电台。'
+      : undefined,
+  });
   let claudeResult: any;
   let isFallback = false;
 
   try {
-    claudeResult = await callClaude(RADIO_DJ_SYSTEM_PROMPT, userMessage);
+    claudeResult = await callClaude(RADIO_DJ_SYSTEM_PROMPT, userMessage, { maxTokens: 1200 });
   } catch (err: any) {
     console.log(`[Radio] Claude 调用耗时 ${Date.now() - t}ms`);
     // JSON 解析失败时重试一次
@@ -103,7 +155,8 @@ export async function createRadioSession(params: CreateSessionParams): Promise<S
       try {
         claudeResult = await callClaude(
           RADIO_DJ_SYSTEM_PROMPT,
-          userMessage + '\n\n上次返回的 JSON 格式有误，请严格按格式返回。'
+          userMessage + '\n\n上次返回的 JSON 格式有误，请严格按格式返回。',
+          { maxTokens: 1200 },
         );
       } catch {
         console.warn('[Radio] 重试失败，进入 fallback 模式');
@@ -120,7 +173,7 @@ export async function createRadioSession(params: CreateSessionParams): Promise<S
 
   // 4. 后端校验
   t = Date.now();
-  const validated = validateClaudeResult(claudeResult, mergedScored, params, userContext);
+  const validated = validateClaudeResult(claudeResult, isFallback ? mergedScored : promptScored, params, userContext);
   console.log(`[Radio] 校验完成 ${Date.now() - t}ms，有效歌曲 ${validated.tracks.length} 首${isFallback ? ' (fallback)' : ''}`);
 
   // 4.5 刷新播放地址（CDN 链接过期后需要重新获取）
@@ -192,26 +245,61 @@ export async function continueRadioSession(sessionId: number, limit = 8): Promis
     musicProfile,
     limit: 6,
   });
-  const mergedScored = mergeRadioCandidates(scored, exploreScored)
+  const dailyScored = await recallDailyRecommendCandidates(userId, 4);
+  const similarSeeds = pickNeteaseSimilarSeeds(scored, 3);
+  const similarScored = similarSeeds.length > 0
+    ? await recallSimilarSongCandidates(userId, similarSeeds[0], 4)
+    : [];
+  const fmScored = await recallPersonalFmCandidates(userId, 2);
+  const vectorSeedIds = pickNeteaseVectorSeeds([
+    ...existingDetails.map(track => ({
+      track: { id: track.trackId, source_track_id: track.sourceTrackId },
+      score: 100,
+    })),
+    ...scored,
+  ], 16);
+  const vectorScored = vectorSeedIds
+    ? await recallVectorSongCandidates(userId, vectorSeedIds, 6)
+    : [];
+  const mergedScored = mergeNeteaseSourceCandidates({
+    libraryScored: scored,
+    dailyScored,
+    similarScored,
+    fmScored,
+    vectorScored,
+    exploreScored,
+    limit: 100,
+  })
     .filter(item => !existingIds.has(item.track.id));
 
   if (mergedScored.length < 3) {
     throw new Error('没有足够的新候选歌曲用于续播');
   }
 
-  const candidates = formatCandidatesForClaude(mergedScored);
-  const prompt = buildRadioPrompt({ userContext, musicProfile, candidates })
-    + `\n\n这是当前 session 的续播请求，只返回 ${Math.max(5, limit)} 首左右即可。第一首必须自然承接上一首：${lastExistingTrack ? `${lastExistingTrack.title} - ${lastExistingTrack.artist}` : '当前队列末尾歌曲'}。不要重复已在当前 session 出现过的歌曲。`;
+  const promptScored = selectPromptCandidates(mergedScored, 18);
+  await enrichTracksWithFacts(promptScored, 5);
+  const candidates = formatCandidatesForClaude(promptScored);
+  const continuationMax = 5;
+  const prompt = buildRadioPrompt({
+    userContext,
+    musicProfile,
+    candidates,
+    trackCountRange: { min: 5, max: continuationMax },
+    copyMode: 'selection',
+  })
+    + `\n\n这是当前 session 的异步续播请求，只返回 5-${continuationMax} 首即可。AI 仍需要负责选歌和排序，但不要生成过长队列。第一首必须自然承接上一首：${lastExistingTrack ? `${lastExistingTrack.title} - ${lastExistingTrack.artist}` : '当前队列末尾歌曲'}。不要重复已在当前 session 出现过的歌曲。`;
 
   let result: any;
+  let isFallback = false;
   try {
-    result = await callClaude(RADIO_DJ_SYSTEM_PROMPT, prompt);
+    result = await callClaude(RADIO_DJ_SYSTEM_PROMPT, prompt, { maxTokens: 1000 });
   } catch (err: any) {
     console.warn('[Radio] 续播 Claude 调用失败，进入本地续播:', err.message);
     result = buildFallbackContinuationResult(mergedScored, session, userContext, lastExistingTrack, limit);
+    isFallback = true;
   }
 
-  const validated = validateClaudeResult(result, mergedScored, {
+  const validated = validateClaudeResult(result, isFallback ? mergedScored : promptScored, {
     scene: session.scene || undefined,
     mood: session.mood || undefined,
   }, userContext);
@@ -272,19 +360,22 @@ function validateClaudeResult(result: any, scored: any[], params: CreateSessionP
     }
 
     const previousTrack = validTracks.length > 0 ? candidateMap.get(validTracks[validTracks.length - 1].trackId) : null;
+    const scoredItem = scored.find(s => s.track.id === trackId);
     const enrichedCopy: typeof t = enrichTrackCopyIfNeeded(t, track, {
       index: validTracks.length,
-      reason: scored.find(s => s.track.id === trackId)?.reason,
+      reason: scoredItem?.reason,
       sceneLabel,
       moodLabel,
       previousTrack,
-      sourceScope: scored.find(s => s.track.id === trackId)?.sourceScope,
+      sourceScope: scoredItem?.sourceScope,
       weather: userContext.weather,
     });
 
     validTracks.push({
       ...enrichedCopy,
       trackId,
+      sourceScope: scoredItem?.sourceScope,
+      source_type: track.source_type,
       sourceTrackId: track.source_track_id,
       title: track.title,
       artist: track.artist,
@@ -396,7 +487,7 @@ async function refreshPlayUrlsForTracks(tracks: any[]): Promise<void> {
  * 保留少量探索歌曲，避免模型不可用时退回全喜欢列表。
  */
 function buildFallbackResult(scored: any[], params: CreateSessionParams, userContext?: any): any {
-  const top = pickFallbackTracks(scored, 10);
+  const top = pickFallbackTracks(scored, 10, buildRestartContext(params));
   const sceneLabel = getSceneLabel(params.scene);
   const moodLabel = params.mood || '随意';
 
@@ -408,6 +499,8 @@ function buildFallbackResult(scored: any[], params: CreateSessionParams, userCon
       const previous = i > 0 ? top[i - 1].track : null;
       return {
         trackId: s.track.id,
+        sourceScope: s.sourceScope,
+        source_type: s.track.source_type,
         ...buildFallbackTrackCopy(s.track, {
           index: i,
           reason: s.reason,
@@ -438,6 +531,8 @@ function buildFallbackContinuationResult(scored: any[], session: any, userContex
       const previous = i > 0 ? top[i - 1].track : lastExistingTrack;
       return {
         trackId: s.track.id,
+        sourceScope: s.sourceScope,
+        source_type: s.track.source_type,
         ...buildFallbackTrackCopy(s.track, {
           index: i,
           reason: s.reason,
@@ -453,36 +548,88 @@ function buildFallbackContinuationResult(scored: any[], session: any, userContex
 }
 
 /**
- * 合并本地曲库候选和主动探索候选。
- * 探索歌曲只占少量位置，保证有新鲜感但不破坏用户原有品味。
+ * fallback 也要保留探索位，否则模型不可用时会退回“只播喜欢列表”。
  */
-export function mergeRadioCandidates(libraryScored: any[], exploreScored: any[]): any[] {
-  const selected: any[] = [];
-  const seen = new Set<number>();
-
-  const pushUnique = (item: any) => {
-    if (!item?.track?.id || seen.has(item.track.id)) return;
-    seen.add(item.track.id);
-    selected.push(item);
-  };
-
-  libraryScored.slice(0, 8).forEach(pushUnique);
-  exploreScored.slice(0, 4).forEach(pushUnique);
-  libraryScored.slice(8, 28).forEach(pushUnique);
-  exploreScored.slice(4, 8).forEach(pushUnique);
-  libraryScored.slice(28, 100).forEach(pushUnique);
-
-  return selected.slice(0, 100);
+interface RestartContext {
+  isRestart: boolean;
+  avoidTrackIds: Set<number>;
 }
 
 /**
- * fallback 也要保留探索位，否则模型不可用时会退回“只播喜欢列表”。
+ * 解析重新开始电台的上下文，后端据此避开上一组歌。
  */
-export function pickFallbackTracks(scored: any[], limit: number): any[] {
+function buildRestartContext(params: Pick<CreateSessionParams, 'refreshMode' | 'avoidTrackIds'>): RestartContext {
+  const avoidTrackIds = new Set(
+    (params.avoidTrackIds || [])
+      .map(id => Number(id))
+      .filter(id => Number.isFinite(id) && id > 0),
+  );
+  return {
+    isRestart: params.refreshMode === 'new-session' || avoidTrackIds.size > 0,
+    avoidTrackIds,
+  };
+}
+
+/**
+ * 重新开始时先把上一组歌从候选前排移开，保留口味但减少复刻感。
+ */
+function prepareSessionCandidates(scored: any[], restart: RestartContext): any[] {
+  if (!restart.isRestart || restart.avoidTrackIds.size === 0) return scored;
+
+  const fresh = scored.filter(item => !restart.avoidTrackIds.has(Number(item?.track?.id)));
+  const avoided = scored.filter(item => restart.avoidTrackIds.has(Number(item?.track?.id)));
+  return [...fresh, ...avoided];
+}
+
+/**
+ * 精选送入模型的候选，控制 prompt 体积，同时保留每日推荐、相似、FM、向量和探索来源。
+ */
+export function selectPromptCandidates(scored: any[], limit = 48): any[] {
+  if (scored.length <= limit) return scored;
+
   const selected: any[] = [];
   const seen = new Set<number>();
+  const priorityScopes = ['daily', 'similar', 'fm', 'vector', 'explore'];
+
+  const pushUnique = (item: any) => {
+    const id = Number(item?.track?.id);
+    if (!Number.isFinite(id) || seen.has(id) || selected.length >= limit) return;
+    seen.add(id);
+    selected.push(item);
+  };
+
+  // 先保留候选前段的主线口味，避免精选后失去用户熟悉感。
+  scored.slice(0, Math.max(8, limit - priorityScopes.length * 2)).forEach(pushUnique);
+
+  // 再为每个外部来源补一个代表，防止接口增强后的信息没有进入模型视野。
+  for (const scope of priorityScopes) {
+    const matched = scored.find(item => getPromptCandidateScope(item) === scope);
+    if (matched) pushUnique(matched);
+  }
+
+  // 最后按原始排序补齐，保持召回评分和混排顺序的影响。
+  scored.forEach(pushUnique);
+
+  return selected.slice(0, limit);
+}
+
+/**
+ * 获取候选来源范围，用于 prompt 精选时做来源多样性保护。
+ */
+function getPromptCandidateScope(item: any): string {
+  if (item?.sourceScope) return item.sourceScope;
+  if (item?.track?.source_type === 'NETEASE_EXPLORE') return 'explore';
+  return 'library';
+}
+
+export function pickFallbackTracks(scored: any[], limit: number, options?: { avoidTrackIds?: Iterable<number> }): any[] {
+  const selected: any[] = [];
+  const seen = new Set<number>();
+  const avoidTrackIds = new Set(Array.from(options?.avoidTrackIds || []).map(Number));
   const explore = scored.filter(item => item.sourceScope === 'explore' || item.track?.source_type === 'NETEASE_EXPLORE');
   const library = scored.filter(item => !(item.sourceScope === 'explore' || item.track?.source_type === 'NETEASE_EXPLORE'));
+  const freshLibrary = library.filter(item => !avoidTrackIds.has(Number(item.track.id)));
+  const freshExplore = explore.filter(item => !avoidTrackIds.has(Number(item.track.id)));
 
   const pushUnique = (item: any) => {
     if (!item?.track?.id || seen.has(item.track.id) || selected.length >= limit) return;
@@ -490,8 +637,10 @@ export function pickFallbackTracks(scored: any[], limit: number): any[] {
     selected.push(item);
   };
 
-  library.slice(0, 4).forEach(pushUnique);
-  explore.slice(0, Math.max(2, Math.floor(limit * 0.25))).forEach(pushUnique);
+  freshLibrary.slice(0, 4).forEach(pushUnique);
+  freshExplore.slice(0, Math.max(2, Math.floor(limit * 0.25))).forEach(pushUnique);
+  freshLibrary.forEach(pushUnique);
+  freshExplore.forEach(pushUnique);
   library.forEach(pushUnique);
   explore.forEach(pushUnique);
 
