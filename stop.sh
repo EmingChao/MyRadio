@@ -2,6 +2,9 @@
 # 一键停止 My Radio 前后端
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
+PID_DIR="$ROOT/.tmp"
+SERVER_PID_FILE="$PID_DIR/radio-server.pid"
+FRONTEND_PID_FILE="$PID_DIR/radio-frontend.pid"
 
 # 收集指定 PID 的所有子进程，确保 npm/tsx/vite 的父子链一起退出。
 collect_children() {
@@ -19,12 +22,14 @@ collect_project_pids() {
   local pids=""
   local port_pids
   local project_pids
+  local pid_file_pids
 
   port_pids="$(lsof -ti :15620 -ti :3000 2>/dev/null || true)"
   project_pids="$(pgrep -f "$ROOT/(server|web)" 2>/dev/null || true)"
-  pids="$port_pids $project_pids"
+  pid_file_pids="$(cat "$SERVER_PID_FILE" "$FRONTEND_PID_FILE" 2>/dev/null || true)"
+  pids="$port_pids $project_pids $pid_file_pids"
 
-  for pid in $port_pids $project_pids; do
+  for pid in $port_pids $project_pids $pid_file_pids; do
     pids="$pids $(collect_children "$pid")"
   done
 
@@ -49,5 +54,6 @@ else
   if [ -n "$alive" ]; then
     echo "$alive" | xargs kill -9 2>/dev/null || true
   fi
+  rm -f "$SERVER_PID_FILE" "$FRONTEND_PID_FILE"
   echo "My Radio 已停止"
 fi

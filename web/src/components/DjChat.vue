@@ -99,11 +99,12 @@ watch([currentReadCount, currentDjMonologue], async () => {
   })
 })
 
-async function handleSend() {
-  if (!chatInput.value.trim() || !store.session || sending.value) return
+async function handleSend(overrideMessage?: string) {
+  const nextMessage = (overrideMessage || chatInput.value).trim()
+  if (!nextMessage || !store.session || sending.value) return
 
-  const message = chatInput.value.trim()
-  chatInput.value = ''
+  const message = nextMessage
+  if (!overrideMessage) chatInput.value = ''
   sending.value = true
 
   chatHistory.value.push({ role: 'user', content: message })
@@ -137,6 +138,12 @@ async function handleSend() {
   } finally {
     sending.value = false
   }
+}
+
+/** 快捷触发“顺着当前歌曲继续”，让后续队列自然靠近当前歌。 */
+function handleSimilarContinue() {
+  if (!store.currentTrack) return
+  handleSend('顺着这首继续')
 }
 </script>
 
@@ -231,14 +238,22 @@ async function handleSend() {
 
     <!-- 聊天输入 -->
     <div v-if="store.session" class="feed-input">
+      <button
+        class="quick-action"
+        type="button"
+        :disabled="sending || !store.currentTrack"
+        @click="handleSimilarContinue"
+      >
+        顺着这首继续
+      </button>
       <input
         v-model="chatInput"
         class="feed-input-field"
         placeholder="告诉 MyRadio 现在想听什么..."
         :disabled="sending"
-        @keyup.enter="handleSend"
+        @keyup.enter="handleSend()"
       />
-      <button class="feed-send" :disabled="sending || !chatInput.trim()" @click="handleSend">
+      <button class="feed-send" :disabled="sending || !chatInput.trim()" @click="handleSend()">
         <span v-if="sending" class="send-pulse" aria-label="发送中" />
         <span v-else>&gt;</span>
       </button>
@@ -552,7 +567,9 @@ async function handleSend() {
 
 /* ===== 聊天输入 ===== */
 .feed-input {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
   gap: 8px;
   margin: 5px 2px 0;
   padding: 8px 10px;
@@ -565,8 +582,36 @@ async function handleSend() {
   flex-shrink: 0;
 }
 
+.quick-action {
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(216, 181, 106, 0.22);
+  background:
+    radial-gradient(circle at 35% 24%, rgba(255, 255, 255, 0.10), transparent 34%),
+    rgba(216, 181, 106, 0.08);
+  color: var(--warm);
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-weight: 720;
+  letter-spacing: 0;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color 0.16s ease, background 0.16s ease, opacity 0.16s ease;
+}
+
+.quick-action:hover:not(:disabled) {
+  border-color: rgba(216, 181, 106, 0.38);
+  background: rgba(216, 181, 106, 0.13);
+}
+
+.quick-action:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .feed-input-field {
-  flex: 1;
+  min-width: 0;
   padding: 8px 8px;
   background: transparent;
   border: 0;

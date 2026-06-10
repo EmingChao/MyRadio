@@ -123,7 +123,8 @@ function loadReferenceAudio(customPath?: string | null): string {
 
 /**
  * 计算文本 hash（用于缓存 key）
- * 音色模式、预设音色、方言和克隆参考音频都会改变最终声音，必须进入缓存 key。
+ * 音色模式、预设音色、预设方言和克隆参考音频都会改变最终声音，必须进入缓存 key。
+ * 克隆音色不支持方言，克隆模式下需要忽略 dialect，避免生成一批实际无效的缓存。
  */
 function textHash(text: string, style?: TtsStyle | null, config?: TtsConfig | null): string {
   const styleKey = style ? `${style.preset}:${style.playbackRate}:${style.prompt}` : 'legacy';
@@ -135,10 +136,19 @@ function textHash(text: string, style?: TtsStyle | null, config?: TtsConfig | nu
  * 计算 TTS 配置签名，用于前端过滤旧配置后台任务推回来的 TTS_READY。
  */
 export function getTtsConfigKey(config?: TtsConfig | null): string {
-  const raw = config
-    ? `${config.mode}:${config.refAudioPath || 'default-ref'}:${config.voice || 'default-voice'}:${config.dialect || 'default-dialect'}`
-    : 'default-config';
+  const raw = config ? buildTtsConfigKeyRaw(config) : 'default-config';
   return crypto.createHash('md5').update(raw).digest('hex').slice(0, 10);
+}
+
+/**
+ * 构建 TTS 配置签名原文。
+ * 只有预设音色支持方言；克隆音色始终以参考音频为准，不把 dialect 计入签名。
+ */
+function buildTtsConfigKeyRaw(config: TtsConfig): string {
+  if (config.mode === 'preset') {
+    return `${config.mode}:${config.refAudioPath || 'default-ref'}:${config.voice || 'default-voice'}:${config.dialect || 'default-dialect'}`;
+  }
+  return `${config.mode}:${config.refAudioPath || 'default-ref'}:${config.voice || 'default-voice'}:clone-no-dialect`;
 }
 
 /**
@@ -207,7 +217,7 @@ async function synthesizeSpeechUncached(
     return null;
   }
 
-  // 3. 构建请求体：方言需要预设模型承接，否则克隆模型容易回落到参考音色。
+  // 3. 构建请求体：只有预设音色支持方言，克隆音色始终围绕参考音频生成。
   let requestBody: TtsRequestPreview;
   try {
     requestBody = buildTtsRequestPreview(text, style, config);
@@ -300,16 +310,10 @@ export function buildTtsRequestPreview(text: string, style?: TtsStyle | null, co
  * 构建 user 侧导演指令。自然语言控制放在 user，不进入最终朗读文本。
  */
 function buildDirectorPrompt(stylePrompt: string, config?: TtsConfig | null, mode: 'clone' | 'preset' = 'clone'): string {
+  if (mode === 'clone') return stylePrompt;
+
   const dialectLabel = config?.dialect ? DIALECT_LABEL_MAP[config.dialect] : null;
   if (!dialectLabel) return stylePrompt;
-  if (mode === 'clone') {
-    return [
-      `保持参考音色的主体质感、年龄感、音高、松弛度、音色厚度和说话习惯，${dialectLabel}只作为很轻的口音倾向。`,
-      `不要为了${dialectLabel}改变成另一种人声，不要夸张模仿方言演员。`,
-      '不要把声音压低、压紧或变得强硬；整段话要连贯成句，标点只作为自然呼吸，不要每个短语都断开。',
-      stylePrompt,
-    ].join('');
-  }
   return [
     `表演总目标：${dialectLabel}私人电台 DJ。`,
     `口音要求：全程使用${dialectLabel}口音和语气，但保持电台主持人的温暖、克制和自然停顿。`,
@@ -328,10 +332,11 @@ function buildAssistantTtsContent(
   options: { includeDialectTag: boolean; mode: 'clone' | 'preset' } = { includeDialectTag: true, mode: 'preset' },
 ): string {
   const tagMap = options.mode === 'clone' ? CLONE_STYLE_TAG_MAP : STYLE_TAG_MAP;
-  const labels = [
-    options.includeDialectTag && config?.dialect ? DIALECT_LABEL_MAP[config.dialect] : '',
-    ...(style ? tagMap[style.preset] : tagMap.neutral),
-  ].filter(Boolean);
+  const styleLabels = style ? tagMap[style.preset] : tagMap.neutral;
+  const dialectLabel = options.includeDialectTag && config?.dialect ? DIALECT_LABEL_MAP[config.dialect] : '';
+  const labels = dialectLabel
+    ? [styleLabels[0], dialectLabel].filter(Boolean)
+    : styleLabels.filter(Boolean);
   const uniqueLabels = Array.from(new Set(labels));
   return uniqueLabels.length > 0
     ? `(${uniqueLabels.join(' ')})${text}`

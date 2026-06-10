@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { buildFallbackTrackCopy, buildOpeningCopy, buildTrackVoiceIntro, enrichTrackCopyIfNeeded, polishDjCopyText } from '../src/agent/dj-copy';
+import { buildFallbackTrackCopy, buildOpeningCopy, buildTrackVoiceIntro, enrichTrackCopyIfNeeded, polishDjCopyText, reviewVoiceIntroAgainstTemplates } from '../src/agent/dj-copy';
 import { resolveTtsStyle } from '../src/services/tts-style';
 
 const track = {
@@ -53,12 +53,87 @@ assert.match(
   /城市|夜晚|灯光|合成器|听众/,
   '有歌曲事实时，兜底独白要优先落到真实信息，而不是只写氛围套话',
 );
+assert.doesNotMatch(
+  factRichCopy.djScript,
+  /有听众会把它听成听众反馈/,
+  '听众印象要转成自然表达，不能把摘要前缀机械拼进独白',
+);
 
-const voiceIntro = buildTrackVoiceIntro(firstTrackCopy);
-assert.ok(voiceIntro.length > firstTrackCopy.segue.length, 'TTS 歌曲独白需要合并介绍和推荐理由，不应只读串场词');
-assert.match(voiceIntro, /Midnight City|M83|专注|编码|用户偏好|心情匹配/, 'TTS 歌曲独白需要包含歌曲介绍和推荐理由');
-assert.doesNotMatch(voiceIntro, /undefined|null/, 'TTS 独白不能出现无效字段文本');
-assert.doesNotMatch(voiceIntro, templatePattern, 'TTS 合并独白也不能重新带入模板套话');
+const singleCopy = buildFallbackTrackCopy({
+  title: '孤独患者',
+  artists: '陈奕迅',
+  album: '孤独患者',
+  genre_tags: '流行',
+  mood_tags: '夜晚',
+  track_fact: {
+    lyric_summary: '歌词围绕孤独、自我消化和在人群里保持距离展开。',
+  },
+}, {
+  index: 2,
+  reason: '用户常听陈奕迅和夜晚流行歌',
+  sceneLabel: '日常',
+  moodLabel: '安静',
+  previousTrack: track,
+});
+assert.doesNotMatch(singleCopy.djScript, /收在《孤独患者》里/, '同名单曲不需要硬说收录在哪张专辑里');
+assert.match(singleCopy.djScript, /孤独|距离|陈奕迅|流行|夜晚/, '不提同名单曲专辑时，仍要用真实歌词主题或听感支撑独白');
+
+const naturalCopyText = [firstTrackCopy.segue, firstTrackCopy.djScript, firstTrackCopy.recommendReason].join('\n');
+assert.doesNotMatch(naturalCopyText, /我把它排在这里|我选它，是因为|把它放到这里，是因为/, '兜底独白不应反复出现解释算法位置的书面句式');
+
+const spotlightVoiceIntro = buildTrackVoiceIntro(firstTrackCopy, {
+  index: 0,
+  track,
+  sourceScope: 'daily',
+});
+assert.ok(spotlightVoiceIntro.length > firstTrackCopy.segue.length, '重点歌曲 TTS 独白需要合并介绍和推荐理由，不应只读串场词');
+assert.match(spotlightVoiceIntro, /Midnight City|M83|专注|编码|用户偏好|心情匹配/, '重点歌曲 TTS 独白需要包含歌曲介绍和推荐理由');
+assert.doesNotMatch(spotlightVoiceIntro, /undefined|null/, 'TTS 独白不能出现无效字段文本');
+assert.doesNotMatch(spotlightVoiceIntro, templatePattern, 'TTS 合并独白也不能重新带入模板套话');
+
+const bridgeVoiceIntro = buildTrackVoiceIntro(firstTrackCopy, {
+  index: 5,
+  track: {
+    ...track,
+    songFacts: undefined,
+    track_fact: undefined,
+    source_type: 'LOCAL_LIBRARY',
+  },
+  sourceScope: 'local',
+});
+assert.ok(bridgeVoiceIntro.length < spotlightVoiceIntro.length * 0.75, '普通歌曲独白需要更像真人 DJ 的轻量过渡，不能每首都完整讲三段');
+assert.match(bridgeVoiceIntro, /Midnight City|M83|专注|编码|用户偏好|心情匹配/, '普通歌曲短独白仍要保留歌曲和推荐核心');
+assert.doesNotMatch(bridgeVoiceIntro, /所以我把它放在这里/, '普通歌曲短独白不能反复出现书面总结句式');
+
+const reviewedVoiceIntro = reviewVoiceIntroAgainstTemplates(
+  '接下来这首《稻香》我把它放在这里，是因为它适合你现在这种放松状态，也能改变一下空气的密度。',
+  {
+    index: 4,
+    track: { title: '稻香', artists: '周杰伦', album: '魔杰座' },
+    recentVoiceIntros: [
+      '接下来这首《晴天》我想让它自然进来。',
+      '接下来这首《七里香》会把刚才的状态继续往前送一点。',
+    ],
+  },
+);
+assert.doesNotMatch(reviewedVoiceIntro, /^接下来这首/, '反模板审稿需要记住最近开头，避免连续几首使用同一个句式');
+assert.doesNotMatch(reviewedVoiceIntro, /我把它放在这里|适合你现在这种|改变.*空气.*密度/, '反模板审稿需要清理位置解释和空气密度类套话');
+assert.match(reviewedVoiceIntro, /稻香|周杰伦|放松/, '审稿后仍要保留歌曲、艺人和可理解的推荐语义');
+
+const memoryAwareVoiceIntro = buildTrackVoiceIntro({
+  segue: '接下来这首《夜曲》我想让它自然进来。',
+  djScript: '接下来这首《夜曲》会把钢琴和鼓点放在很清楚的位置。',
+  recommendReason: '它和你现在的夜晚状态能接上。',
+}, {
+  index: 6,
+  track: { title: '夜曲', artists: '周杰伦', album: '十一月的萧邦' },
+  recentVoiceIntros: [
+    '接下来这首《半岛铁盒》我想让它自然进来。',
+    '接下来这首《一路向北》我想让它自然进来。',
+  ],
+});
+assert.doesNotMatch(memoryAwareVoiceIntro, /^接下来这首/, '构建 TTS 独白时需要应用句式记忆，不能只在单字段净化时处理');
+assert.match(memoryAwareVoiceIntro, /夜曲|周杰伦|钢琴|鼓点|夜晚/, '句式改写不能牺牲真实歌曲信息');
 
 const polished = polishDjCopyText('下一首我想让它来改变一下空气的密度，它适合你现在这种专注状态，也给当前编码留出了呼吸。');
 assert.doesNotMatch(polished, templatePattern, '即使模型返回模板句，后端也需要在保存前净化');

@@ -12,6 +12,7 @@ const prompt = buildRadioPrompt({
       songFacts: {
         wiki: '一首关于夜晚和重新出发的歌曲。',
         lyricTheme: '歌词围绕城市、雨声和没说出口的话展开。',
+        listenerImpression: '听众反馈集中在深夜、雨天、回忆、释怀。',
       },
       reason: '用户偏好, 夜晚匹配',
     },
@@ -26,7 +27,9 @@ assert.match(RADIO_DJ_SYSTEM_PROMPT, /改变空气的密度|空气里的明暗|�
 assert.match(RADIO_DJ_SYSTEM_PROMPT, /sourceScope=daily/, '系统 prompt 需要说明每日推荐来源的表达方式');
 assert.match(RADIO_DJ_SYSTEM_PROMPT, /sourceScope=similar/, '系统 prompt 需要说明相似歌曲来源的表达方式');
 assert.match(RADIO_DJ_SYSTEM_PROMPT, /sourceScope=fm/, '系统 prompt 需要说明私人 FM 来源的表达方式');
+assert.match(RADIO_DJ_SYSTEM_PROMPT, /听众.*共鸣|共鸣.*听众/, '系统 prompt 需要把 listenerImpression 定义为听众共鸣线索');
 assert.match(prompt, /djScript 必须优先使用其中至少一个可信线索/, '用户 prompt 需要要求 DJ 解说使用事实卡');
+assert.match(prompt, /听众印象/, '用户 prompt 需要要求 DJ 优先使用评论压缩出的听众印象');
 assert.match(prompt, /禁止编造创作故事/, '用户 prompt 需要明确事实缺失时的边界');
 assert.match(prompt, /不要说“每日推荐接口”/, '用户 prompt 需要禁止把来源解释成接口日志');
 assert.match(prompt, /songFacts/, '候选内容需要允许携带 songFacts 字段');

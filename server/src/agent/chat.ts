@@ -1,3 +1,5 @@
+import fs from 'fs';
+import path from 'path';
 import db from '../stores/db';
 import { callClaude } from './claude';
 import { CHAT_SYSTEM_PROMPT, buildChatPrompt } from './prompts';
@@ -6,6 +8,22 @@ import { getTrackById } from '../stores/track';
 import { recallCandidates, formatCandidatesForClaude } from './recall';
 import { appendDoNotPlay, appendFavoriteGenres } from '../stores/profile';
 import { buildSoftReorderPlan } from './queue-plan';
+import { recallSimilarSongCandidates } from './netease-sources';
+import { appendRuntimeLog } from '../services/runtime-logs';
+import { song_url } from 'NeteaseCloudMusicApi';
+
+interface SimilarContinuationTrackLike {
+  title?: string;
+  artist?: string;
+}
+
+interface SimilarContinuationParams {
+  currentTrack: SimilarContinuationTrackLike | null | undefined;
+  similarScored: any[];
+  fallbackScored: any[];
+  existingTrackIds: Set<number>;
+  limit?: number;
+}
 
 /**
  * 处理聊天消息
@@ -49,6 +67,18 @@ export async function handleChat(sessionId: number, message: string, currentInde
     mood: session.mood || undefined,
     limit: 150,
   });
+
+  if (isSimilarContinuationMessage(message) && currentTrack) {
+    return handleSimilarContinuation({
+      sessionId,
+      userId: session.userId,
+      currentIndex: currentIndex >= 0 ? currentIndex : 0,
+      currentTrack,
+      sessionTracks,
+      scored,
+    });
+  }
+
   const candidates = formatCandidatesForClaude(scored);
 
   // 调用 Claude
@@ -96,6 +126,207 @@ export async function handleChat(sessionId: number, message: string, currentInde
     queueUpdateMode,
     insertedTrackIds,
   };
+}
+
+/**
+ * 判断用户是否想“顺着当前歌曲继续”。
+ * 这类请求应直接使用 simi_song，不必等待 Claude 先判断意图。
+ */
+export function isSimilarContinuationMessage(message: string): boolean {
+  return /顺着这首|顺着当前|类似这首|像这首|按这个感觉|这个感觉继续|就这个感觉|more like this|similar to this|like this/i.test(message.trim());
+}
+
+/**
+ * 构造“顺着这首继续”的软插入歌曲列表。
+ * 相似歌曲优先，本地候选补位，并过滤当前队列中已经出现过的歌曲。
+ */
+export function buildSimilarContinuationTracks(params: SimilarContinuationParams): Array<{
+  trackId: number;
+  segue: string;
+  djScript: string;
+  recommendReason: string;
+}> {
+  const limit = Math.max(3, params.limit ?? 8);
+  const currentTitle = params.currentTrack?.title || '这首歌';
+  const currentArtist = params.currentTrack?.artist || '当前艺人';
+  const selected: Array<{ track: any; source: 'similar' | 'local'; reason?: string }> = [];
+  const seen = new Set<number>(params.existingTrackIds);
+
+  /**
+   * 追加候选时做统一去重，避免过渡窗口后又听到当前队列里的旧歌。
+   */
+  function pushCandidate(item: any, source: 'similar' | 'local'): void {
+    const trackId = Number(item?.track?.id);
+    if (!Number.isFinite(trackId) || seen.has(trackId) || selected.length >= limit) return;
+    seen.add(trackId);
+    selected.push({ track: item.track, source, reason: item.reason });
+  }
+
+  params.similarScored.forEach(item => pushCandidate(item, 'similar'));
+  params.fallbackScored.forEach(item => pushCandidate(item, 'local'));
+
+  return selected.map((item, index) => {
+    const track = item.track;
+    const isFirst = index === 0;
+    const sourceText = item.source === 'similar'
+      ? `它是从《${currentTitle}》的相近听感里延展出来的`
+      : `它来自你自己的曲库，但和《${currentTitle}》现在留下的质地能接上`;
+
+    return {
+      trackId: Number(track.id),
+      segue: isFirst
+        ? `好，我会让后面慢慢靠近《${currentTitle}》的质地，不直接复制它，先用《${track.title}》往旁边走一步。`
+        : `这一首继续顺着《${currentTitle}》留下的听感往外延展。`,
+      djScript: `《${track.title}》来自 ${track.artist || '这位音乐人'}${track.album ? ` 的《${track.album}》` : ''}，我会把它放在过渡之后，让队列自然靠近 ${currentArtist} 这首歌的声音方向。`,
+      recommendReason: `${sourceText}；我选它不是因为“相似”两个字，而是想保留刚才那首歌的情绪惯性，同时给耳朵一个新的角度。`,
+    };
+  });
+}
+
+/**
+ * 处理“顺着这首继续”：调用网易云相似歌曲，再用现有软重排机制接入后续队列。
+ */
+async function handleSimilarContinuation(params: {
+  sessionId: number;
+  userId: number;
+  currentIndex: number;
+  currentTrack: any;
+  sessionTracks: Array<{ trackId: number }>;
+  scored: any[];
+}): Promise<any> {
+  const start = Date.now();
+  const sourceTrackId = params.currentTrack.source_track_id || params.currentTrack.sourceTrackId || params.currentTrack.id;
+  appendRuntimeLog(params.sessionId, {
+    scope: 'chat',
+    level: 'info',
+    title: '开始顺着当前歌曲续播',
+    message: `种子歌曲：${params.currentTrack.title || '未知'} - ${params.currentTrack.artist || '未知'}`,
+    detail: {
+      seedTrack: {
+        trackId: params.currentTrack.id,
+        sourceTrackId,
+        title: params.currentTrack.title,
+        artist: params.currentTrack.artist,
+      },
+    },
+  });
+
+  const similarScored = await recallSimilarSongCandidates(params.userId, sourceTrackId, 10);
+  const existingTrackIds = new Set(params.sessionTracks.map(track => Number(track.trackId)));
+  const requestedTracks = buildSimilarContinuationTracks({
+    currentTrack: params.currentTrack,
+    similarScored,
+    fallbackScored: params.scored,
+    existingTrackIds,
+    limit: 8,
+  });
+  const combinedScored = mergeScoredCandidates(params.scored, similarScored);
+  const reorderResult = await handleReorderQueue(params.sessionId, params.currentIndex, requestedTracks, combinedScored);
+  await refreshPlayUrlsForInsertedTracks(params.sessionId, reorderResult.insertedTrackIds);
+
+  appendRuntimeLog(params.sessionId, {
+    scope: 'netease',
+    level: reorderResult.queueChanged ? 'success' : 'warn',
+    title: 'simi_song 相似续播完成',
+    message: `返回 ${similarScored.length} 首，插入 ${reorderResult.insertedTrackIds.length} 首`,
+    durationMs: Date.now() - start,
+    detail: {
+      seedTrackId: sourceTrackId,
+      similarCount: similarScored.length,
+      requestedTracks,
+      insertedTrackIds: reorderResult.insertedTrackIds,
+    },
+  });
+
+  return {
+    reply: reorderResult.queueChanged
+      ? `好，我会让后面慢慢靠近《${params.currentTrack.title}》的质地，不直接复制它，而是顺着这个感觉往外走一点。`
+      : `我试着顺着《${params.currentTrack.title}》找了一圈，但暂时没有足够合适的新歌；这首先继续听，我不会硬塞不合适的相似歌。`,
+    intent: 'SIMILAR_CONTINUE',
+    queueChanged: reorderResult.queueChanged,
+    queueUpdateMode: reorderResult.queueChanged ? 'soft' : 'none',
+    insertedTrackIds: reorderResult.insertedTrackIds,
+  };
+}
+
+/**
+ * 为聊天插入的新歌刷新播放地址。
+ * 相似歌曲可能是刚从网易云写入本地的候选，入库时还没有短期 CDN 播放 URL。
+ */
+async function refreshPlayUrlsForInsertedTracks(sessionId: number, trackIds: number[]): Promise<void> {
+  const ids = Array.from(new Set(trackIds.map(Number).filter(Number.isFinite)));
+  if (ids.length === 0) return;
+
+  const cookieFile = path.resolve(__dirname, '../../data/netease-cookie.txt');
+  if (!fs.existsSync(cookieFile)) {
+    appendRuntimeLog(sessionId, {
+      scope: 'netease',
+      level: 'warn',
+      title: '相似续播播放地址未刷新',
+      message: '未找到网易云 cookie，新插入歌曲可能暂时没有播放地址',
+    });
+    return;
+  }
+
+  const rows = db.prepare(`
+    SELECT id, source_track_id AS sourceTrackId
+    FROM radio_track
+    WHERE id IN (${ids.map(() => '?').join(',')})
+      AND source_track_id IS NOT NULL
+  `).all(...ids) as Array<{ id: number; sourceTrackId: string }>;
+  const sourceIds = rows.map(row => String(row.sourceTrackId)).filter(Boolean);
+  if (sourceIds.length === 0) return;
+
+  const start = Date.now();
+  try {
+    const cookie = fs.readFileSync(cookieFile, 'utf-8').trim();
+    const result = await song_url({ id: sourceIds.join(','), br: 999000, cookie });
+    const urlData = ((result as any).body?.data || []) as any[];
+    const sourceToUrl = new Map<string, string>();
+    for (const item of urlData) {
+      if (item?.id && item?.url) sourceToUrl.set(String(item.id), item.url);
+    }
+
+    const update = db.prepare('UPDATE radio_track SET play_url = ?, modified_time = datetime(\'now\',\'localtime\') WHERE id = ?');
+    let updated = 0;
+    for (const row of rows) {
+      const url = sourceToUrl.get(String(row.sourceTrackId));
+      if (!url) continue;
+      update.run(url, row.id);
+      updated++;
+    }
+
+    appendRuntimeLog(sessionId, {
+      scope: 'netease',
+      level: 'success',
+      title: '相似续播播放地址刷新完成',
+      message: `${updated}/${rows.length} 首成功`,
+      durationMs: Date.now() - start,
+    });
+  } catch (err: any) {
+    appendRuntimeLog(sessionId, {
+      scope: 'netease',
+      level: 'warn',
+      title: '相似续播播放地址刷新失败',
+      message: err.message || '未知错误',
+      durationMs: Date.now() - start,
+    });
+  }
+}
+
+/**
+ * 合并本地候选和网易云相似候选，供后续校验插入歌曲是否可信。
+ */
+function mergeScoredCandidates(primary: any[], extra: any[]): any[] {
+  const merged: any[] = [];
+  const seen = new Set<number>();
+  for (const item of [...extra, ...primary]) {
+    const trackId = Number(item?.track?.id);
+    if (!Number.isFinite(trackId) || seen.has(trackId)) continue;
+    seen.add(trackId);
+    merged.push(item);
+  }
+  return merged;
 }
 
 /**

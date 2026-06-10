@@ -21,6 +21,7 @@ import { getSession, getSessionTracks, getSessionTracksWithDetail, insertSession
 import { song_url } from 'NeteaseCloudMusicApi';
 import type { Track } from '../types';
 import { enrichTracksWithFacts } from '../services/track-facts';
+import { createBufferedRuntimeLogger } from '../services/runtime-logs';
 
 /**
  * 兼容旧测试和旧调用点：保留原来的 mergeRadioCandidates 导出。
@@ -31,12 +32,25 @@ export { mergeRadioCandidates } from './netease-sources';
  * 电台核心编排：召回 → Claude 重排 → 校验 → 保存 → 返回
  */
 
+/**
+ * Claude 新建电台输出预算。
+ * 需要覆盖开场、摘要和 5-6 首歌曲的三段 DJ 文案，过低会让独白被压成模板短句。
+ */
+export const CLAUDE_SESSION_MAX_TOKENS = 2400;
+
+/**
+ * Claude 续播输出预算。
+ * 续播曲目更少，但仍要保留选歌排序和自然转场的表达空间。
+ */
+export const CLAUDE_CONTINUATION_MAX_TOKENS = 1600;
+
 interface CreateSessionParams {
   scene?: string;
   mood?: string;
   extraPrompt?: string;
   refreshMode?: 'new-session';
   avoidTrackIds?: number[];
+  runtimeLogger?: ReturnType<typeof createBufferedRuntimeLogger>;
 }
 
 interface SessionResult {
@@ -68,6 +82,8 @@ interface SessionResult {
 export async function createRadioSession(params: CreateSessionParams): Promise<SessionResult> {
   const userId = 443961717;
   const totalStart = Date.now();
+  const runLog = params.runtimeLogger || createBufferedRuntimeLogger();
+  runLog.info('radio', '开始创建电台', `场景=${params.scene || '默认'}，心情=${params.mood || '随意'}`);
 
   // 1. 先组装上下文，天气和时间要参与召回，而不是只写进 prompt。
   let t = Date.now();
@@ -78,6 +94,7 @@ export async function createRadioSession(params: CreateSessionParams): Promise<S
   });
   const musicProfile = buildMusicProfile(userId);
   console.log(`[Radio] 上下文构建 ${Date.now() - t}ms`);
+  runLog.success('radio', '上下文构建完成', `时间=${userContext.time || '未知'}，天气=${userContext.weather || '无'}`, { durationMs: Date.now() - t });
 
   // 2. 召回用户曲库候选歌曲
   t = Date.now();
@@ -89,13 +106,16 @@ export async function createRadioSession(params: CreateSessionParams): Promise<S
     limit: 100,
   });
   console.log(`[Radio] 召回完成 ${Date.now() - t}ms，候选 ${scored.length} 首`);
+  runLog.success('recall', '本地曲库召回完成', `候选 ${scored.length} 首`, { durationMs: Date.now() - t });
 
   if (scored.length === 0) {
+    runLog.error('recall', '本地曲库召回失败', '没有候选歌曲');
     throw new Error('没有候选歌曲');
   }
 
   // 2.5 主动探索少量新歌，让电台不只局限在用户原始歌单里。
   t = Date.now();
+  runLog.info('netease', '开始拉取网易云候选', '包含每日推荐、私人 FM、相似歌曲和向量续播');
   const exploreScored = await recallExploreCandidates(userId, {
     scene: params.scene,
     mood: params.mood,
@@ -126,9 +146,15 @@ export async function createRadioSession(params: CreateSessionParams): Promise<S
     restartContext,
   );
   const promptScored = selectPromptCandidates(mergedScored, 18);
-  await enrichTracksWithFacts(promptScored, 6);
+  await enrichTracksWithFacts(promptScored, 6, runLog);
   const candidates = formatCandidatesForClaude(promptScored);
   console.log(`[Radio] 探索推荐 ${Date.now() - t}ms，新增候选 ${exploreScored.length} 首，合并候选 ${mergedScored.length} 首，模型候选 ${promptScored.length} 首`);
+  runLog.success(
+    'netease',
+    '网易云候选和歌曲事实准备完成',
+    `每日 ${dailyScored.length}，相似 ${similarScored.length}，FM ${fmScored.length}，向量 ${vectorScored.length}，事实卡 ${candidates.filter(candidate => candidate.songFacts).length} 首`,
+    { durationMs: Date.now() - t },
+  );
 
   // 3. 调用 Claude
   t = Date.now();
@@ -142,30 +168,51 @@ export async function createRadioSession(params: CreateSessionParams): Promise<S
       ? '这是用户主动重新开始电台。请保持当前场景和品味气质，但不要复刻上一组队列；优先从候选前段里选择没在上一组出现过的歌曲，像真正重新编排过的一期电台。'
       : undefined,
   });
+  runLog.info('claude', '开始 AI 选歌排序', `模型候选 ${candidates.length} 首，目标 5-6 首`, {
+    detail: {
+      request: {
+        maxTokens: CLAUDE_SESSION_MAX_TOKENS,
+        systemPrompt: RADIO_DJ_SYSTEM_PROMPT,
+        userMessage,
+      },
+    },
+  });
   let claudeResult: any;
   let isFallback = false;
 
   try {
-    claudeResult = await callClaude(RADIO_DJ_SYSTEM_PROMPT, userMessage, { maxTokens: 1200 });
+    claudeResult = await callClaude(RADIO_DJ_SYSTEM_PROMPT, userMessage, { maxTokens: CLAUDE_SESSION_MAX_TOKENS });
+    runLog.success('claude', 'AI 编排完成', 'Claude 已返回选歌和排序结果', {
+      durationMs: Date.now() - t,
+      detail: {
+        response: summarizeClaudeResultForLog(claudeResult),
+      },
+    });
   } catch (err: any) {
     console.log(`[Radio] Claude 调用耗时 ${Date.now() - t}ms`);
     // JSON 解析失败时重试一次
     if (err instanceof SyntaxError) {
       console.warn('[Radio] Claude 返回 JSON 解析失败，重试...');
+      runLog.warn('claude', 'AI 返回格式异常', 'JSON 解析失败，正在重试', { durationMs: Date.now() - t });
       try {
         claudeResult = await callClaude(
           RADIO_DJ_SYSTEM_PROMPT,
           userMessage + '\n\n上次返回的 JSON 格式有误，请严格按格式返回。',
-          { maxTokens: 1200 },
+          { maxTokens: CLAUDE_SESSION_MAX_TOKENS },
         );
+        runLog.success('claude', 'AI 重试成功', 'Claude 第二次返回了可解析结果', {
+          detail: { response: summarizeClaudeResultForLog(claudeResult) },
+        });
       } catch {
         console.warn('[Radio] 重试失败，进入 fallback 模式');
+        runLog.error('claude', 'AI 重试失败', '进入本地编排模式');
         claudeResult = buildFallbackResult(mergedScored, params, userContext);
         isFallback = true;
       }
     } else {
       // 模型不可用，进入 fallback 模式
       console.warn('[Radio] Claude 调用失败，进入 fallback 模式:', err.message);
+      runLog.error('claude', 'AI 编排失败', err.message || '进入本地编排模式', { durationMs: Date.now() - t });
       claudeResult = buildFallbackResult(mergedScored, params, userContext);
       isFallback = true;
     }
@@ -175,15 +222,19 @@ export async function createRadioSession(params: CreateSessionParams): Promise<S
   t = Date.now();
   const validated = validateClaudeResult(claudeResult, isFallback ? mergedScored : promptScored, params, userContext);
   console.log(`[Radio] 校验完成 ${Date.now() - t}ms，有效歌曲 ${validated.tracks.length} 首${isFallback ? ' (fallback)' : ''}`);
+  runLog.success('radio', '队列校验完成', `有效歌曲 ${validated.tracks.length} 首${isFallback ? '，本地编排模式' : ''}`, { durationMs: Date.now() - t });
 
   // 4.5 刷新播放地址（CDN 链接过期后需要重新获取）
-  await refreshPlayUrlsForTracks(validated.tracks);
+  await refreshPlayUrlsForTracks(validated.tracks, runLog);
 
   // 5. 保存到数据库
   t = Date.now();
   const sessionId = saveSession(userId, params, userContext, validated);
+  runLog.bindSession(sessionId);
+  runLog.success('radio', '会话保存完成', `sessionId=${sessionId}`, { durationMs: Date.now() - t });
   console.log(`[Radio] 保存完成 ${Date.now() - t}ms，sessionId=${sessionId}`);
   console.log(`[Radio] 总耗时 ${Date.now() - totalStart}ms`);
+  runLog.success('radio', '电台创建完成', `总耗时 ${Date.now() - totalStart}ms，准备后台生成 TTS`, { durationMs: Date.now() - totalStart });
 
   return {
     sessionId,
@@ -213,6 +264,10 @@ export async function createRadioSession(params: CreateSessionParams): Promise<S
 export async function continueRadioSession(sessionId: number, limit = 8): Promise<SessionResult['tracks']> {
   const session = getSession(sessionId);
   if (!session) throw new Error('会话不存在');
+  const runLog = createBufferedRuntimeLogger();
+  runLog.bindSession(sessionId);
+  const totalStart = Date.now();
+  runLog.info('continue', '开始异步续播', `目标追加 ${limit} 首`);
 
   const existingSessionTracks = getSessionTracks(sessionId);
   const existingIds = new Set(existingSessionTracks.map(track => track.trackId));
@@ -273,11 +328,12 @@ export async function continueRadioSession(sessionId: number, limit = 8): Promis
     .filter(item => !existingIds.has(item.track.id));
 
   if (mergedScored.length < 3) {
+    runLog.error('continue', '续播候选不足', `只找到 ${mergedScored.length} 首新候选`);
     throw new Error('没有足够的新候选歌曲用于续播');
   }
 
   const promptScored = selectPromptCandidates(mergedScored, 18);
-  await enrichTracksWithFacts(promptScored, 5);
+  await enrichTracksWithFacts(promptScored, 5, runLog);
   const candidates = formatCandidatesForClaude(promptScored);
   const continuationMax = 5;
   const prompt = buildRadioPrompt({
@@ -292,9 +348,24 @@ export async function continueRadioSession(sessionId: number, limit = 8): Promis
   let result: any;
   let isFallback = false;
   try {
-    result = await callClaude(RADIO_DJ_SYSTEM_PROMPT, prompt, { maxTokens: 1000 });
+    runLog.info('claude', '开始续播 AI 排序', `续播候选 ${candidates.length} 首`, {
+      detail: {
+        request: {
+          maxTokens: CLAUDE_CONTINUATION_MAX_TOKENS,
+          systemPrompt: RADIO_DJ_SYSTEM_PROMPT,
+          userMessage: prompt,
+        },
+      },
+    });
+    result = await callClaude(RADIO_DJ_SYSTEM_PROMPT, prompt, { maxTokens: CLAUDE_CONTINUATION_MAX_TOKENS });
+    runLog.success('claude', '续播 AI 排序完成', 'Claude 已返回追加队列', {
+      detail: {
+        response: summarizeClaudeResultForLog(result),
+      },
+    });
   } catch (err: any) {
     console.warn('[Radio] 续播 Claude 调用失败，进入本地续播:', err.message);
+    runLog.error('claude', '续播 AI 失败', `${err.message || '未知错误'}，进入本地续播`);
     result = buildFallbackContinuationResult(mergedScored, session, userContext, lastExistingTrack, limit);
     isFallback = true;
   }
@@ -305,7 +376,7 @@ export async function continueRadioSession(sessionId: number, limit = 8): Promis
   }, userContext);
   const appended = validated.tracks.slice(0, limit);
 
-  await refreshPlayUrlsForTracks(appended);
+  await refreshPlayUrlsForTracks(appended, runLog);
 
   const startSort = existingSessionTracks.length;
   insertSessionTracks(sessionId, appended.map((track: any, index: number) => ({
@@ -315,6 +386,7 @@ export async function continueRadioSession(sessionId: number, limit = 8): Promis
     recommendReason: track.recommendReason,
     segue: track.segue,
   })));
+  runLog.success('continue', '续播保存完成', `追加 ${appended.length} 首，${isFallback ? '本地续播' : 'AI 续播'}`, { durationMs: Date.now() - totalStart });
 
   return appended.map((track: any) => ({
     trackId: track.trackId,
@@ -371,6 +443,15 @@ function validateClaudeResult(result: any, scored: any[], params: CreateSessionP
       weather: userContext.weather,
     });
 
+    const recentVoiceIntros = validTracks.slice(-3).map(track => track.voiceIntro).filter(Boolean);
+    const voiceIntro = buildTrackVoiceIntro(enrichedCopy, {
+      index: validTracks.length,
+      track,
+      sourceScope: scoredItem?.sourceScope,
+      totalTracks: result.tracks.length,
+      recentVoiceIntros,
+    });
+
     validTracks.push({
       ...enrichedCopy,
       trackId,
@@ -382,7 +463,7 @@ function validateClaudeResult(result: any, scored: any[], params: CreateSessionP
       album: track.album,
       coverUrl: track.cover_url,
       playUrl: track.play_url,
-      voiceIntro: buildTrackVoiceIntro(enrichedCopy),
+      voiceIntro,
     });
   }
 
@@ -397,6 +478,27 @@ function validateClaudeResult(result: any, scored: any[], params: CreateSessionP
       : buildOpeningCopy(params, validTracks.length),
     summary: result.summary || '',
     tracks: validTracks.slice(0, 20),
+  };
+}
+
+/**
+ * 压缩 Claude 响应详情，保留排查需要的标题、摘要和曲目 ID。
+ */
+function summarizeClaudeResultForLog(result: any): Record<string, any> {
+  const tracks = Array.isArray(result?.tracks)
+    ? result.tracks.slice(0, 20).map((track: any) => ({
+      trackId: track.trackId,
+      segue: track.segue,
+      djScript: track.djScript,
+      recommendReason: track.recommendReason,
+    }))
+    : [];
+  return {
+    sessionTitle: result?.sessionTitle,
+    say: result?.say,
+    summary: result?.summary,
+    trackCount: tracks.length,
+    tracks,
   };
 }
 
@@ -443,10 +545,11 @@ function saveSession(
  * 刷新会话中歌曲的播放地址
  * 网易云 CDN 链接有时效性，过期后需重新获取
  */
-async function refreshPlayUrlsForTracks(tracks: any[]): Promise<void> {
+async function refreshPlayUrlsForTracks(tracks: any[], runLog?: ReturnType<typeof createBufferedRuntimeLogger>): Promise<void> {
   const COOKIE_FILE = path.resolve(__dirname, '../../data/netease-cookie.txt');
   if (!fs.existsSync(COOKIE_FILE)) {
     console.warn('[Radio] 无网易云 cookie，跳过播放地址刷新');
+    runLog?.warn('netease', '跳过播放地址刷新', '未找到网易云 cookie');
     return;
   }
 
@@ -459,6 +562,8 @@ async function refreshPlayUrlsForTracks(tracks: any[]): Promise<void> {
   if (sourceIds.length === 0) return;
 
   console.log(`[Radio] 刷新 ${sourceIds.length} 首歌的播放地址...`);
+  const start = Date.now();
+  runLog?.info('netease', '开始刷新播放地址', `准备请求 ${sourceIds.length} 首歌的播放 URL`);
   try {
     const result = await song_url({ id: sourceIds.join(','), br: 999000, cookie });
     const urlData = (result.body?.data || []) as any[];
@@ -477,8 +582,10 @@ async function refreshPlayUrlsForTracks(tracks: any[]): Promise<void> {
       }
     }
     console.log(`[Radio] 播放地址刷新完成: ${urlMap.size}/${sourceIds.length} 成功`);
+    runLog?.success('netease', '播放地址刷新完成', `${urlMap.size}/${sourceIds.length} 首成功`, { durationMs: Date.now() - start });
   } catch (err: any) {
     console.error('[Radio] 刷新播放地址失败:', err.message);
+    runLog?.error('netease', '播放地址刷新失败', err.message || '未知错误', { durationMs: Date.now() - start });
   }
 }
 

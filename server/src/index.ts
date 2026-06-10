@@ -18,6 +18,7 @@ import { errorHandler } from './middleware/error-handler';
 import { startScheduler } from './services/scheduler';
 import { initDb } from './stores/init-db';
 import { getWeatherSummary } from './services/weather';
+import { setRuntimeLogBroadcaster } from './services/runtime-logs';
 
 dotenv.config();
 
@@ -88,6 +89,12 @@ app.use(errorHandler);
 // 创建 HTTP 服务并挂载 WebSocket
 const server = http.createServer(app);
 wsManager.init(server);
+setRuntimeLogBroadcaster((sessionId, entry) => {
+  wsManager.broadcast(sessionId, {
+    type: 'RUN_LOG',
+    data: { sessionId, entry },
+  });
+});
 
 server.listen(PORT, () => {
   console.log(`My Radio 服务已启动: http://localhost:${PORT}`);

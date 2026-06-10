@@ -63,11 +63,13 @@ router.put('/', (req, res) => {
       return res.status(400).json({ code: 400, message: '不支持的方言类型' });
     }
 
+    const nextMode = mode ?? getTtsConfig(USER_ID).mode;
     const updated = upsertTtsConfig(USER_ID, {
       ...(mode !== undefined ? { mode } : {}),
       ...(refAudioPath !== undefined ? { refAudioPath } : {}),
       ...(voice !== undefined ? { voice } : {}),
-      ...(dialect !== undefined ? { dialect } : {}),
+      // 只有预设音色支持方言；切到克隆模式时必须清空，避免界面和日志误导用户。
+      ...(nextMode === 'clone' ? { dialect: null } : dialect !== undefined ? { dialect } : {}),
     });
 
     // 配置已进入 TTS hash，切换后会生成新文件；这里只清理运行时参考音频缓存。
@@ -125,8 +127,8 @@ router.post('/voice', (req, res) => {
 
       fs.writeFileSync(filePath, buffer);
 
-      // 更新配置，指向新上传的音频文件
-      upsertTtsConfig(USER_ID, { refAudioPath: filePath });
+      // 上传参考音频代表进入克隆音色，克隆模式不保留方言配置。
+      upsertTtsConfig(USER_ID, { mode: 'clone', refAudioPath: filePath, dialect: null });
 
       // 新参考音频路径会进入 TTS hash，这里只清理运行时参考音频缓存。
       clearTtsRuntimeCache();

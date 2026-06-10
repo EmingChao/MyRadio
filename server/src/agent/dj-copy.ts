@@ -27,6 +27,16 @@ interface FallbackTrackCopyOptions {
   weather?: string;
 }
 
+type VoiceIntroDepth = 'spotlight' | 'standard' | 'bridge';
+
+interface TrackVoiceIntroOptions {
+  index?: number;
+  track?: TrackLike;
+  sourceScope?: string;
+  totalTracks?: number;
+  recentVoiceIntros?: string[];
+}
+
 /**
  * 获取面向用户的场景名称。
  */
@@ -55,7 +65,7 @@ export function buildFallbackTrackCopy(track: TrackLike, options: FallbackTrackC
   const tags = normalizeTags(track) || '旋律、节奏和声线';
   const reason = cleanRecommendSignal(options.reason || '和你的听歌习惯比较接近');
   const sourceHint = buildSourceHint(track, options);
-  const albumText = track.album ? `收在《${track.album}》里，` : '';
+  const albumText = buildAlbumContextText(track);
   const factSentence = buildFactSentence(track);
   const weatherMood = sanitizeWeatherForDj(options.weather);
   const weatherText = shouldMentionWeather(track, options)
@@ -81,17 +91,17 @@ export function buildFallbackTrackCopy(track: TrackLike, options: FallbackTrackC
   ])}`);
   const djScript = polishDjCopyText(pickByTrack(track, [
     `《${track.title}》${albumText}${factSentence}${artist} 的处理不靠堆满信息，而是把${tags}摆得很清楚，听的时候容易抓到它的主线。`,
-    `这首《${track.title}》${albumText}${factSentence}我会特别留意 ${artist} 的声线和编曲之间的距离：它没有把所有东西都推到前面，而是让细节一层一层出现。`,
-    `《${track.title}》${albumText}${factSentence}它真正有意思的地方，是${tags}之间的关系很明确；你不用研究背景，也能听到这首歌自己的脾气。`,
+    `这首《${track.title}》${albumText}${factSentence}我会先留意 ${artist} 的声线和编曲之间的距离：它没有把所有东西都推到前面，而是让细节慢慢出现。`,
+    `《${track.title}》${albumText}${factSentence}好听之外，它还有一个清楚的听感落点：${tags}之间的关系很明确，不需要硬讲背景也能听出它自己的表情。`,
     `如果只看歌名，《${track.title}》可能会被低估。${factSentence}${artist} 把旋律、节奏和停顿处理得很有分寸，整首歌不是装饰性的陪伴，而是有自己的表达。`,
     `这首歌不是只负责“好听”。${factSentence}${artist} 在《${track.title}》里留下了可辨认的线索，${tags}让它和普通背景音乐拉开了一点距离。`,
   ]));
   const recommendReason = polishDjCopyText(pickByTrack(track, [
-    `我把它排在这里，不只是因为${reason}。${weatherText}在${options.sceneLabel}里，它的节奏能给手上的事一个稳定拍点，同时又不会把注意力抢走。`,
-    `${weatherText}${reason}是入口，但我更看重它和你常听方向之间的关系：这首歌的${tags}够清楚，能让这一段${options.sceneLabel}时间少一点机械循环感。`,
-    `我选它，是因为${reason}；更具体一点，它在${options.moodLabel}里不是喊口号，而是用节奏和声线把人留在一个能继续做事的位置。`,
-    `如果一路只播最熟的歌，电台会变得太平。这首《${track.title}》保留了${reason}这条线，又多出一点属于它自己的表情。`,
-    `把它放到这里，是因为${reason}。${weatherText}${artist} 的处理方式让它不会变成纯背景；在${options.moodLabel}里听，它能给当前${options.sceneLabel}留住一个稳定的拍点，也让耳朵有东西可抓。`,
+    `${reason}只是入口。${weatherText}在${options.sceneLabel}里，它的节奏能给手上的事一个稳定拍点，同时又不会把注意力抢走。`,
+    `${weatherText}它和你常听方向之间有一条线：这首歌的${tags}够清楚，能让这一段${options.sceneLabel}时间少一点机械循环感。`,
+    `${reason}这条线能对上，但更重要的是，它在${options.moodLabel}里不是喊口号，而是用节奏和声线把人留在一个能继续做事的位置。`,
+    `如果一路只播最熟的歌，电台会变得太平。这首《${track.title}》保留了你熟悉的入口，又多出一点属于它自己的表情。`,
+    `${weatherText}${reason}能把它带进这一轮；${artist} 的处理方式让它不会变成纯背景，在${options.moodLabel}里听，也能给当前${options.sceneLabel}留住一个稳定的拍点，和你常听的方向接得上。`,
   ]) + sourceHint.recommendSuffix);
 
   return { segue, djScript, recommendReason };
@@ -116,25 +126,94 @@ export function enrichTrackCopyIfNeeded<T extends { segue?: string; djScript?: s
 
 /**
  * 生成真正用于 TTS 播放的歌曲前独白。
- * 这里会把过渡、歌曲介绍和推荐理由揉成一段，避免用户只听到很短的切歌提示。
+ * 这里按歌曲位置、候选来源和事实丰富度分层，避免每首歌都像完整作文。
  */
 export function buildTrackVoiceIntro(copy: {
   segue?: string;
   djScript?: string;
   recommendReason?: string;
-}): string {
-  const parts = [copy.segue, copy.djScript, copy.recommendReason]
-    .map(text => normalizeSentence(text))
-    .filter(Boolean);
-  if (parts.length <= 1) return parts[0] || '';
+}, options: TrackVoiceIntroOptions = {}): string {
+  const segue = normalizeSentence(copy.segue);
+  const djScript = normalizeSentence(copy.djScript);
+  const recommendReason = normalizeSentence(copy.recommendReason);
+  const depth = resolveVoiceIntroDepth(options);
 
-  // TTS 需要像主持人的一段话，而不是把三个字段机械拼起来。
-  const [segue, djScript, recommendReason] = parts;
-  return polishDjCopyText([
-    segue,
-    djScript,
-    recommendReason ? `所以我把它放在这里：${stripIntroPhrase(recommendReason)}` : '',
-  ].filter(Boolean).join(' '));
+  if (depth === 'spotlight') {
+    return reviewVoiceIntroAgainstTemplates([
+      compactVoicePart(segue, 110),
+      compactVoicePart(djScript, 150),
+      recommendReason ? compactVoicePart(`我把它放在这里，是因为${stripIntroPhrase(recommendReason)}`, 130) : '',
+    ].filter(Boolean).join(' '), options);
+  }
+
+  if (depth === 'standard') {
+    return reviewVoiceIntroAgainstTemplates([
+      compactVoicePart(segue, 105),
+      compactVoicePart(djScript || recommendReason, 135),
+    ].filter(Boolean).join(' '), options);
+  }
+
+  return reviewVoiceIntroAgainstTemplates([
+    compactVoicePart(segue, 95),
+    compactVoicePart(stripIntroPhrase(recommendReason || djScript), 75),
+  ].filter(Boolean).join(' '), options);
+}
+
+/**
+ * 对最终 TTS 独白做反模板审稿。
+ * 这里使用最近几首的句式记忆和固定套话清单，减少连续播放时的重复感。
+ */
+export function reviewVoiceIntroAgainstTemplates(text: string, options: TrackVoiceIntroOptions = {}): string {
+  const track = options.track;
+  let reviewed = polishDjCopyText(text)
+    .replace(/我把它放在这里，是因为/g, '')
+    .replace(/我把它放在这里/g, '')
+    .replace(/把它放在这里，是因为/g, '')
+    .replace(/我选它，是因为/g, '')
+    .replace(/所以我把它放在这里/g, '')
+    .replace(/这首歌放在这里，是想/g, '')
+    .replace(/，\s*，/g, '，')
+    .replace(/。\s*。/g, '。')
+    .trim();
+
+  reviewed = rewriteRepeatedOpening(reviewed, options);
+  reviewed = dedupeNearbySentences(reviewed);
+
+  // 如果审稿后丢失了歌曲名，补一个很短的锚点，避免 TTS 变成泛泛氛围话。
+  if (track?.title && !reviewed.includes(track.title)) {
+    const artist = track.artists || track.artist || '';
+    reviewed = `${artist ? `${artist} 的` : ''}《${track.title}》在这里进来。${reviewed}`;
+  }
+
+  return polishDjCopyText(reviewed);
+}
+
+/**
+ * 判断当前歌曲独白的讲述层级：重点歌讲故事，普通歌做自然过渡。
+ */
+export function resolveVoiceIntroDepth(options: TrackVoiceIntroOptions = {}): VoiceIntroDepth {
+  const index = Math.max(0, options.index ?? 0);
+  const track = options.track;
+  const sourceScope = normalizeSourceScope(options.sourceScope || track?.source_type);
+  const facts = track ? resolveSongFacts(track) : undefined;
+  const hasRichFacts = Boolean(facts?.listenerImpression || facts?.wiki || facts?.lyricTheme);
+  const isDiscoverySource = sourceScope === 'daily' || sourceScope === 'explore' || sourceScope === 'fm';
+  const isRelationSource = sourceScope === 'similar' || sourceScope === 'vector';
+
+  if (index === 0) return 'spotlight';
+
+  // 发现类候选适合被认真介绍，但也要留出间隔，避免每首都像推荐理由汇报。
+  if (isDiscoverySource) {
+    return index % 4 === 1 ? 'spotlight' : 'standard';
+  }
+
+  // 有真实事实的歌可以偶尔展开讲，其余时候保持一段式介绍。
+  if (hasRichFacts) {
+    return index % 5 === 2 ? 'spotlight' : 'standard';
+  }
+
+  if (isRelationSource || index % 3 === 0) return 'standard';
+  return 'bridge';
 }
 
 /**
@@ -203,6 +282,126 @@ function normalizeSentence(text: string | undefined): string {
 }
 
 /**
+ * 压缩一段口播文本，优先在自然标点处收束，避免 TTS 读出半截句子。
+ */
+function compactVoicePart(text: string | undefined, maxLength: number): string {
+  const cleaned = normalizeSentence(text);
+  if (!cleaned || cleaned.length <= maxLength) return cleaned;
+
+  const clipped = cleaned.slice(0, maxLength + 1);
+  const punctuationIndex = Math.max(
+    clipped.lastIndexOf('。'),
+    clipped.lastIndexOf('；'),
+    clipped.lastIndexOf(';'),
+    clipped.lastIndexOf('，'),
+    clipped.lastIndexOf(','),
+  );
+
+  if (punctuationIndex >= Math.floor(maxLength * 0.55)) {
+    return ensureVoiceSentenceEnd(clipped.slice(0, punctuationIndex + 1));
+  }
+
+  return ensureVoiceSentenceEnd(cleaned.slice(0, maxLength).replace(/[，,；;、\s]+$/g, ''));
+}
+
+/**
+ * 给被截断的口播片段补一个自然句尾。
+ */
+function ensureVoiceSentenceEnd(text: string): string {
+  const cleaned = normalizeSentence(text).replace(/[，,；;、\s]+$/g, '');
+  if (!cleaned) return '';
+  return /[。！？!?]$/.test(cleaned) ? cleaned : `${cleaned}。`;
+}
+
+/**
+ * 当最近几首使用了相同开头时，换成更具体的歌曲锚点。
+ */
+function rewriteRepeatedOpening(text: string, options: TrackVoiceIntroOptions): string {
+  const currentSignature = getOpeningSignature(text);
+  if (!currentSignature || !isOpeningSignatureRepeated(currentSignature, options.recentVoiceIntros || [])) {
+    return text;
+  }
+
+  const track = options.track;
+  const title = track?.title || extractQuotedTitle(text);
+  if (!title) return text;
+  const artist = track?.artists || track?.artist || '';
+  const lead = `换到《${title}》这里，${artist ? `${artist}的声音` : '这首歌'}`;
+  let rest = text
+    .replace(/^接下来这首《[^》]+》\s*/, '')
+    .replace(/^下一首(?:我选|听)?《[^》]+》\s*/, '')
+    .replace(/^接下来听《[^》]+》\s*/, '')
+    .replace(/^这里换到《[^》]+》\s*/, '')
+    .replace(new RegExp(`接下来这首《${escapeRegExp(title)}》`, 'g'), '这首歌')
+    .replace(/^我想让它自然进来[。；;，,\s]*/g, '')
+    .replace(/^我想让它/g, '')
+    .replace(/^这首歌/g, '')
+    .replace(/^它/g, '')
+    .replace(/^[，,。；;\s]+/g, '');
+
+  if (!rest) {
+    rest = '会把这一段听感接得更具体。';
+  }
+
+  return ensureVoiceSentenceEnd(`${lead}${rest}`);
+}
+
+/**
+ * 判断某个开头句式近期是否已经出现。
+ */
+function isOpeningSignatureRepeated(signature: string, recentVoiceIntros: string[]): boolean {
+  return recentVoiceIntros
+    .map(getOpeningSignature)
+    .filter(Boolean)
+    .some(item => item === signature);
+}
+
+/**
+ * 抽取句式开头，用于判断连续独白是否像同一套模板。
+ */
+function getOpeningSignature(text: string | undefined): string {
+  const cleaned = normalizeSentence(text);
+  if (/^接下来这首/.test(cleaned)) return '接下来这首';
+  if (/^接下来听/.test(cleaned)) return '接下来听';
+  if (/^下一首/.test(cleaned)) return '下一首';
+  if (/^这里换到/.test(cleaned)) return '这里换到';
+  if (/^现在让/.test(cleaned)) return '现在让';
+  if (/^前一首/.test(cleaned)) return '前一首';
+  return '';
+}
+
+/**
+ * 从文案中提取《歌名》形式的标题。
+ */
+function extractQuotedTitle(text: string): string {
+  return text.match(/《([^》]+)》/)?.[1] || '';
+}
+
+/**
+ * 转义正则特殊字符，避免歌名里带符号时改写失败。
+ */
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * 去掉相邻重复句，降低模型连续复述同一层意思的概率。
+ */
+function dedupeNearbySentences(text: string): string {
+  const sentences = normalizeSentence(text).split(/(?<=[。！？!?])/).map(item => item.trim()).filter(Boolean);
+  if (sentences.length <= 1) return text;
+
+  const kept: string[] = [];
+  for (const sentence of sentences) {
+    const normalized = normalizeComparableText(sentence);
+    const last = kept[kept.length - 1];
+    if (last && normalizeComparableText(last) === normalized) continue;
+    kept.push(sentence);
+  }
+  return kept.join('');
+}
+
+/**
  * 生成更适合口播的标签摘要，避免把数据库标签原样堆到独白里。
  */
 function normalizeTags(track: TrackLike): string {
@@ -233,6 +432,39 @@ function cleanRecommendSignal(reason: string): string {
 }
 
 /**
+ * 只在专辑确实提供上下文时提专辑。
+ * 很多网易云单曲的 album 会等于歌名，硬说“收在同名专辑里”会显得像模板。
+ */
+function buildAlbumContextText(track: TrackLike): string {
+  const album = normalizeSentence(track.album || '');
+  if (!album || isSingleLikeAlbum(track.title, album)) return '';
+  if (stableNumber(track) % 3 !== 0 && !resolveSongFacts(track)?.wiki) return '';
+  return `出现在《${album}》这张作品里，`;
+}
+
+/**
+ * 判断专辑名是否更像单曲容器，而不是值得介绍的专辑上下文。
+ */
+function isSingleLikeAlbum(title: string, album: string): boolean {
+  const cleanTitle = normalizeComparableText(title);
+  const cleanAlbum = normalizeComparableText(album);
+  if (!cleanTitle || !cleanAlbum) return false;
+  if (cleanTitle === cleanAlbum) return true;
+  if (/单曲|single|新歌|remix|伴奏|demo/i.test(album)) return true;
+  return false;
+}
+
+/**
+ * 归一化标题和专辑名，用于判断同名单曲。
+ */
+function normalizeComparableText(text: string): string {
+  return String(text || '')
+    .toLowerCase()
+    .replace(/[《》"'“”‘’()[\]（）【】\-_\s·.。,:：，、]/g, '')
+    .trim();
+}
+
+/**
  * 从歌曲事实卡中挑出一句具体信息，让兜底独白有真实落点。
  */
 function buildFactSentence(track: TrackLike): string {
@@ -241,7 +473,7 @@ function buildFactSentence(track: TrackLike): string {
 
   const candidates = [
     facts.lyricTheme ? `歌词线索落在${ensureSentenceTail(facts.lyricTheme)}` : '',
-    facts.listenerImpression ? `有听众会把它听成${ensureSentenceTail(facts.listenerImpression)}` : '',
+    facts.listenerImpression ? buildListenerImpressionSentence(facts.listenerImpression) : '',
     facts.wiki ? `资料里能抓到一个具体线索：${ensureSentenceTail(facts.wiki)}` : '',
     facts.alias?.length ? `它还有一个容易被记住的名字线索：${ensureSentenceTail(facts.alias.join('、'))}` : '',
     facts.musicDetail ? `音乐信息里更明确的是${ensureSentenceTail(facts.musicDetail)}` : '',
@@ -249,6 +481,18 @@ function buildFactSentence(track: TrackLike): string {
 
   if (candidates.length === 0) return '';
   return `${pickByTrack(track, candidates)} `;
+}
+
+/**
+ * 把评论摘要转成自然听众印象，避免出现“听成听众反馈集中在”这类机械拼接。
+ */
+function buildListenerImpressionSentence(listenerImpression: string): string {
+  const cleaned = normalizeSentence(listenerImpression)
+    .replace(/^听众(?:反馈|印象)?(?:主要)?集中在[:：，,\s]*/g, '')
+    .replace(/^评论(?:主要)?集中在[:：，,\s]*/g, '')
+    .replace(/^很多听众(?:会|把它)?/g, '')
+    .replace(/^常把它当作/g, '常被听成');
+  return cleaned ? `听众印象更集中在${ensureSentenceTail(cleaned)}` : '';
 }
 
 /**
@@ -327,6 +571,19 @@ function buildSourceHint(track: TrackLike, options: FallbackTrackCopyOptions): {
 }
 
 /**
+ * 将数据库来源和召回来源归一成独白策略可理解的来源类型。
+ */
+function normalizeSourceScope(sourceScope: string | null | undefined): string {
+  const source = String(sourceScope || '').toLowerCase();
+  if (source.includes('daily')) return 'daily';
+  if (source.includes('explore')) return 'explore';
+  if (source.includes('personal_fm') || source.includes('fm')) return 'fm';
+  if (source.includes('simi') || source.includes('similar')) return 'similar';
+  if (source.includes('vector')) return 'vector';
+  return source;
+}
+
+/**
  * 控制天气在独白里的出现频率：天气只在少数强相关位置被提到。
  */
 function shouldMentionWeather(track: TrackLike, options: FallbackTrackCopyOptions): boolean {
@@ -368,6 +625,10 @@ function sanitizeWeatherForDj(weather: string | undefined): string {
  */
 function stripIntroPhrase(text: string): string {
   return text
+    .replace(/^我把它排在这里，不只是因为/, '不只是因为')
+    .replace(/^我把它放到这里，是因为/, '')
+    .replace(/^把它放到这里，是因为/, '')
+    .replace(/^我选它，是因为/, '')
     .replace(/^我推荐它，不只是因为/, '不只是因为')
     .replace(/^这首歌放在这里，是想/, '我想')
     .replace(/^我会在这里选它，是因为/, '我选它，是因为')

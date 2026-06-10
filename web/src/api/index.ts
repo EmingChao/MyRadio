@@ -116,6 +116,14 @@ export async function getSessionTtsItems(sessionId: number, say?: string) {
   return request(`/radio/session/${sessionId}/tts?${query.toString()}`, { cache: 'no-store' });
 }
 
+/** 查询当前 session 的运行日志 */
+export async function getSessionRuntimeLogs(sessionId: number, since?: number) {
+  const query = new URLSearchParams();
+  if (since) query.set('since', String(since));
+  query.set('_', String(Date.now()));
+  return request(`/radio/session/${sessionId}/runtime-logs?${query.toString()}`, { cache: 'no-store' });
+}
+
 /** 获取今日电台计划 */
 export async function getDailyPlan() {
   return request('/plan/today');

@@ -29,9 +29,11 @@ router.post('/session/chat', async (req, res) => {
           album: track?.album || null,
           coverUrl: track?.cover_url || null,
           playUrl: track?.play_url || null,
+          sourceTrackId: track?.source_track_id || null,
           djScript: st.djScript || '',
           recommendReason: st.recommendReason || '',
           segue: st.segue || '',
+          voiceIntro: [st.segue, st.djScript, st.recommendReason].filter(Boolean).join(' ').trim(),
         };
       });
       result.updatedTracks = updatedTracks;

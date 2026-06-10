@@ -35,3 +35,13 @@ export function mergeAppendedTracks<T extends { trackId: number }>(existingTrack
   const uniqueTracks = appendedTracks.filter(track => !existing.has(track.trackId))
   return [...existingTracks, ...uniqueTracks]
 }
+
+/**
+ * 判断恢复接口返回空时，是否需要清理浏览器里仍保留的旧 session。
+ */
+export function shouldClearLocalSessionAfterRestore(
+  activeSessionId: number | null | undefined,
+  restoredSession: { sessionId?: number } | null | undefined,
+): boolean {
+  return Boolean(activeSessionId) && !restoredSession
+}

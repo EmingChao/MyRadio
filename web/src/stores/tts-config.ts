@@ -33,11 +33,12 @@ export const useTtsConfigStore = defineStore('tts-config', () => {
    * 将后端返回的配置同步到本地。
    */
   function applyConfig(data: any) {
+    const mode = data.mode || 'clone';
     config.value = {
-      mode: data.mode || 'clone',
+      mode,
       refAudioName: data.refAudioName || null,
       voice: data.voice || null,
-      dialect: data.dialect || null,
+      dialect: mode === 'preset' ? data.dialect || null : null,
       configKey: data.configKey || null,
     };
     usePlayerStore().setActiveTtsConfigKey(config.value.configKey);
@@ -69,7 +70,8 @@ export const useTtsConfigStore = defineStore('tts-config', () => {
     if (config.value.mode === mode) return;
     loading.value = true;
     try {
-      const res = await updateTtsConfig({ mode });
+      // 克隆音色不支持方言，切回克隆时同时清空方言配置。
+      const res = await updateTtsConfig(mode === 'clone' ? { mode, dialect: null } : { mode });
       if (res.code === 0 && res.data) {
         applyConfig(res.data);
         notifyPlayerTtsConfigChanged();
@@ -100,6 +102,8 @@ export const useTtsConfigStore = defineStore('tts-config', () => {
    * 切换方言
    */
   async function setDialect(dialect: string | null) {
+    // 只有预设音色支持方言；克隆模式下不提交方言配置。
+    if (config.value.mode !== 'preset') return;
     if (config.value.dialect === dialect) return;
     loading.value = true;
     try {
@@ -125,6 +129,7 @@ export const useTtsConfigStore = defineStore('tts-config', () => {
         config.value.configKey = res.data.configKey || null;
         // 上传后自动切到克隆模式
         config.value.mode = 'clone';
+        config.value.dialect = null;
         usePlayerStore().setActiveTtsConfigKey(config.value.configKey);
         notifyPlayerTtsConfigChanged();
         return true;
@@ -143,7 +148,7 @@ export const useTtsConfigStore = defineStore('tts-config', () => {
   async function resetVoice() {
     loading.value = true;
     try {
-      const res = await updateTtsConfig({ mode: 'clone', refAudioPath: null });
+      const res = await updateTtsConfig({ mode: 'clone', refAudioPath: null, dialect: null });
       if (res.code === 0 && res.data) {
         applyConfig(res.data);
         notifyPlayerTtsConfigChanged();

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, provide, watch } from 'vue'
 import { usePlayerStore } from '../stores/player'
+import { useRuntimeLogsStore } from '../stores/runtime-logs'
 import { createRadioSession } from '../api'
 import { useMediaKeyboardControls } from '../composables/media-keyboard-controls'
 import { useWebSocket } from '../composables/useWebSocket'
@@ -20,9 +21,11 @@ import BottomTabs from '../components/BottomTabs.vue'
 import DeviceSelector from '../components/DeviceSelector.vue'
 import TtsConfigPanel from '../components/TtsConfigPanel.vue'
 import SongDetailDrawer from '../components/SongDetailDrawer.vue'
+import RuntimeLogPanel from '../components/RuntimeLogPanel.vue'
 
 const store = usePlayerStore()
-const { subscribe, onEvent, offEvent } = useWebSocket()
+const runtimeLogs = useRuntimeLogsStore()
+const { connected, subscribe, onEvent, offEvent } = useWebSocket()
 const { bgStyle: globalCoverStyle } = useCoverBg()
 useMediaKeyboardControls()
 
@@ -70,6 +73,8 @@ function handleWsEvent(event: WsEvent) {
     } else {
       store.updateQueue(event.data.tracks)
     }
+  } else if (event.type === 'RUN_LOG' && event.data?.entry) {
+    runtimeLogs.appendFromWs(Number(event.data.sessionId), event.data.entry)
   }
 }
 
@@ -97,10 +102,17 @@ watch(theme, (value) => {
 }, { immediate: true })
 
 watch(() => store.session?.sessionId, (id) => {
+  runtimeLogs.resetForSession(id || null)
   if (!id) return
   subscribe(id)
   void store.fetchReadyTtsItemsForSession()
   store.preheatUpcomingPlayback()
+})
+
+watch(connected, (isConnected) => {
+  if (!isConnected) return
+  // 服务重启后 WebSocket 会重连；重连时重新询问后端是否仍有本次启动可恢复的 session。
+  void store.restoreSession()
 })
 
 function showToast(message: string, type: 'info' | 'success' | 'error' = 'info') {
@@ -167,6 +179,11 @@ async function handleCreate(options?: { refreshMode?: 'new-session'; avoidTrackI
 
 function handleCreateClick() {
   void handleCreate()
+}
+
+async function handleOpenRuntimeLogs() {
+  showSettings.value = false
+  await runtimeLogs.open(store.session?.sessionId)
 }
 
 async function handleRestartRadio() {
@@ -355,10 +372,18 @@ function setTheme(value: 'dark' | 'light') {
         <button class="setting-item" @click="showSettings = false; showLogin = true">
           <span class="setting-label">网易云登录</span>
         </button>
+        <button class="setting-item" @click="handleOpenRuntimeLogs">
+          <span class="setting-label">运行日志</span>
+          <span class="setting-value">{{ store.session ? '查看当前 session' : '等待 session' }}</span>
+        </button>
         <button v-if="store.session" class="setting-item setting-danger" @click="handleRestartRadio">
           <span class="setting-label">重新开始电台</span>
         </button>
       </div>
+    </BottomSheet>
+
+    <BottomSheet :visible="runtimeLogs.visible" title="运行日志" variant="tall" @close="runtimeLogs.close">
+      <RuntimeLogPanel />
     </BottomSheet>
   </div>
 </template>
@@ -753,6 +778,12 @@ function setTheme(value: 'dark' | 'light') {
 
 .setting-theme {
   gap: 12px;
+}
+
+.setting-value {
+  font-family: var(--font-body);
+  font-size: 12px;
+  color: var(--text-3);
 }
 
 .theme-switch {

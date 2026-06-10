@@ -1,5 +1,11 @@
 import assert from 'node:assert/strict';
-import { mergeRadioCandidates, pickFallbackTracks, selectPromptCandidates } from '../src/agent/radio';
+import {
+  CLAUDE_CONTINUATION_MAX_TOKENS,
+  CLAUDE_SESSION_MAX_TOKENS,
+  mergeRadioCandidates,
+  pickFallbackTracks,
+  selectPromptCandidates,
+} from '../src/agent/radio';
 
 function item(id: number, sourceScope: 'library' | 'explore' = 'library') {
   return {
@@ -57,5 +63,7 @@ assert.ok(promptCandidates.some(candidate => candidate.sourceScope === 'similar'
 assert.ok(promptCandidates.some(candidate => candidate.sourceScope === 'fm'), 'prompt 精选不能丢失私人 FM 候选');
 assert.ok(promptCandidates.some(candidate => candidate.sourceScope === 'vector'), 'prompt 精选不能丢失向量续播候选');
 assert.ok(promptCandidates.some(candidate => candidate.sourceScope === 'explore'), 'prompt 精选不能丢失探索候选');
+assert.ok(CLAUDE_SESSION_MAX_TOKENS >= 2200, '新建电台需要给 Claude 足够输出预算，避免 DJ 文案被压成短模板');
+assert.ok(CLAUDE_CONTINUATION_MAX_TOKENS >= 1600, '续播也需要保留足够输出预算，避免后续歌曲文案质量下降');
 
 console.log('radio candidate tests passed');

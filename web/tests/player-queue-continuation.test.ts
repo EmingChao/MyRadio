@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import {
   mergeAppendedTracks,
+  shouldClearLocalSessionAfterRestore,
   shouldApplyContinuationResult,
   shouldRequestQueueContinuation,
 } from '../src/stores/player-queue-continuation'
@@ -23,6 +24,22 @@ assert.deepEqual(
   mergeAppendedTracks(tracks, [{ trackId: 2, title: 'B duplicate' }, { trackId: 3, title: 'C' }] as any[]).map(track => track.trackId),
   [1, 2, 3],
   'WebSocket 和接口同时返回时，追加队列必须按 trackId 去重',
+)
+
+assert.equal(
+  shouldClearLocalSessionAfterRestore(57, null),
+  true,
+  '本地页面已有 session，但服务重启后 /now 返回空时，应清理页面旧歌单',
+)
+assert.equal(
+  shouldClearLocalSessionAfterRestore(null, null),
+  false,
+  '本地没有 session 时，/now 返回空不需要额外清理',
+)
+assert.equal(
+  shouldClearLocalSessionAfterRestore(57, { sessionId: 58 }),
+  false,
+  '后端返回了可恢复 session 时，不应按空恢复清理',
 )
 
 console.log('player queue continuation tests passed')

@@ -27,6 +27,10 @@ interface SessionTrack {
   segue: string | null;
 }
 
+interface RecentSessionOptions {
+  createdAfter?: string;
+}
+
 /**
  * 获取会话信息
  */
@@ -111,7 +115,10 @@ export function updateTrackPlayStatus(sessionId: number, trackId: number, status
 /**
  * 获取用户最近的会话
  */
-export function getRecentSession(userId: number): Session | undefined {
+export function getRecentSession(userId: number, options: RecentSessionOptions = {}): Session | undefined {
+  const createdAfter = normalizeSentence(options.createdAfter);
+  const createTimeFilter = createdAfter ? 'AND create_time >= ?' : '';
+  const params = createdAfter ? [userId, createdAfter] : [userId];
   return db.prepare(`
     SELECT
       id,
@@ -125,9 +132,47 @@ export function getRecentSession(userId: number): Session | undefined {
       create_time AS createTime
     FROM radio_session
     WHERE user_id = ?
+      ${createTimeFilter}
     ORDER BY create_time DESC
     LIMIT 1
-  `).get(userId) as Session | undefined;
+  `).get(...params) as Session | undefined;
+}
+
+/**
+ * 判断某个 session 是否属于本次服务启动后的可恢复会话。
+ */
+export function shouldRestoreSessionCreatedInCurrentBoot(sessionCreateTime: string, serviceStartedAt: string): boolean {
+  const createTime = normalizeSentence(sessionCreateTime);
+  const bootTime = normalizeSentence(serviceStartedAt);
+  if (!createTime || !bootTime) return false;
+  return createTime >= bootTime;
+}
+
+/**
+ * 把 JS Date 格式化为 SQLite datetime('now','localtime') 一致的本地时间格式。
+ */
+export function formatSqliteLocalDateTime(date: Date): string {
+  const year = date.getFullYear();
+  const month = padDatePart(date.getMonth() + 1);
+  const day = padDatePart(date.getDate());
+  const hour = padDatePart(date.getHours());
+  const minute = padDatePart(date.getMinutes());
+  const second = padDatePart(date.getSeconds());
+  return `${year}-${month}-${day} ${hour}:${minute}:${second}`;
+}
+
+/**
+ * 日期字段补零，保证字符串比较和 SQLite 时间格式一致。
+ */
+function padDatePart(value: number): string {
+  return String(value).padStart(2, '0');
+}
+
+/**
+ * 清理可选字符串，避免空值进入 SQL 条件。
+ */
+function normalizeSentence(text: string | undefined): string {
+  return text?.trim() || '';
 }
 
 /**

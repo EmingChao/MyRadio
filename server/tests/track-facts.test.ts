@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { formatCandidatesForClaude } from '../src/agent/recall';
-import { buildSongFactsForPrompt, normalizeTrackFactText } from '../src/services/track-facts';
+import { buildListenerImpressionSummary, buildSongFactsForPrompt, normalizeTrackFactText } from '../src/services/track-facts';
 
 const longWiki = '这是一首关于夜晚、离别和重新出发的歌曲。'.repeat(20);
 const longLyric = '歌词把城市、雨声、旧日记和没说出口的话放在一起。'.repeat(20);
@@ -50,5 +50,17 @@ const creditFact = buildSongFactsForPrompt({
 });
 assert.doesNotMatch(creditFact?.lyricTheme || '', /作词|作曲|编曲|制作人|录音|河南说唱之神/, '歌词主题摘要必须过滤职员表，不能把制作人员当成歌词主题');
 assert.match(creditFact?.lyricTheme || '', /生活压力|自我调侃/, '过滤职员表后仍要保留真正的歌词主题');
+
+const listenerSummary = buildListenerImpressionSummary([
+  { content: '每次深夜下班走在路上听到这首，都会想起很多年前那段回忆。', likedCount: 238 },
+  { content: '雨天一个人听特别容易释怀，不是难过，是慢慢放下。', likedCount: 132 },
+  { content: '@朋友 快来听 http://example.com', likedCount: 999 },
+  { content: '求赞求赞求赞', likedCount: 500 },
+  { content: '好听', likedCount: 20 },
+]);
+assert.match(listenerSummary, /深夜|雨天/, '听众印象需要保留评论里反复出现的真实场景');
+assert.match(listenerSummary, /回忆|释怀/, '听众印象需要保留评论里的真实情绪线索');
+assert.doesNotMatch(listenerSummary, /http|@|求赞|好听/, '听众印象不能把低质评论、链接或 @ 信息带进 DJ 文案');
+assert.ok(listenerSummary.length <= 90, '听众印象需要足够短，适合进入 prompt');
 
 console.log('track facts tests passed');

@@ -17,7 +17,7 @@ const voiceOptions = [
   { id: 'Dean',  label: 'Dean',  gender: 'male',   lang: '英文' },
 ]
 
-/** 方言风格选项（可选，不选则为默认普通话） */
+/** 方言风格选项：仅预设音色支持，克隆音色始终使用参考音频本身 */
 const dialectOptions = [
   { value: 'dongbei',    label: '东北话' },
   { value: 'sichuan',    label: '四川话' },
@@ -82,23 +82,6 @@ function handleResetVoice() {
       </button>
     </div>
 
-    <!-- 基础方言设置：对预设、克隆等模式都生效，默认不选 -->
-    <div class="dialect-section">
-      <span class="tts-label">方言风格 <span class="dialect-hint">（可选，默认普通话）</span></span>
-      <div class="dialect-chips">
-        <button
-          v-for="opt in dialectOptions"
-          :key="opt.value ?? 'default'"
-          class="dialect-chip"
-          :class="{ active: store.config.dialect === opt.value }"
-          :disabled="store.loading"
-          @click="handleDialectSelect(opt.value)"
-        >
-          {{ opt.label }}
-        </button>
-      </div>
-    </div>
-
     <!-- 克隆模式详情 -->
     <div v-if="store.config.mode === 'clone'" class="tts-section">
       <div class="tts-voice-info">
@@ -130,6 +113,23 @@ function handleResetVoice() {
 
     <!-- 预设模式详情 -->
     <div v-else class="tts-section">
+      <!-- 方言只对预设音色生效，克隆音色不展示该设置 -->
+      <div class="dialect-section">
+        <span class="tts-label">方言风格 <span class="dialect-hint">（仅预设音色，可选）</span></span>
+        <div class="dialect-chips">
+          <button
+            v-for="opt in dialectOptions"
+            :key="opt.value ?? 'default'"
+            class="dialect-chip"
+            :class="{ active: store.config.dialect === opt.value }"
+            :disabled="store.loading"
+            @click="handleDialectSelect(opt.value)"
+          >
+            {{ opt.label }}
+          </button>
+        </div>
+      </div>
+
       <!-- 音色选择网格 -->
       <div class="voice-grid">
         <button

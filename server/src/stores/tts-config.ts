@@ -7,7 +7,7 @@ export interface TtsConfig {
   mode: 'clone' | 'preset';
   refAudioPath: string | null;
   voice: string | null;    // 预设音色标识：冰糖/茉莉/苏打/白桦/Mia/Chloe/Milo/Dean
-  dialect: string | null;  // 方言风格：dongbei/sichuan/henan/cantonese
+  dialect: string | null;  // 方言风格，仅预设音色支持：dongbei/sichuan/henan/cantonese
 }
 
 const DEFAULT_CONFIG: TtsConfig = {
@@ -30,12 +30,12 @@ export function getTtsConfig(userId: number): TtsConfig {
     return { ...DEFAULT_CONFIG };
   }
 
-  return {
+  return normalizeTtsConfig({
     mode: row.mode || 'clone',
     refAudioPath: row.refAudioPath || null,
     voice: row.voice || null,
     dialect: row.dialect || null,
-  };
+  });
 }
 
 /**
@@ -43,7 +43,7 @@ export function getTtsConfig(userId: number): TtsConfig {
  */
 export function upsertTtsConfig(userId: number, fields: Partial<TtsConfig>): TtsConfig {
   const current = getTtsConfig(userId);
-  const merged = { ...current, ...fields };
+  const merged = normalizeTtsConfig({ ...current, ...fields });
 
   db.prepare(`
     INSERT INTO radio_tts_config (user_id, mode, ref_audio_path, voice, dialect, create_time, modified_time)
@@ -57,4 +57,15 @@ export function upsertTtsConfig(userId: number, fields: Partial<TtsConfig>): Tts
   `).run(userId, merged.mode, merged.refAudioPath, merged.voice, merged.dialect);
 
   return merged;
+}
+
+/**
+ * 归一化 TTS 配置。
+ * 克隆音色只跟随参考音频，不支持方言，因此读取和保存时都要清空 dialect。
+ */
+function normalizeTtsConfig(config: TtsConfig): TtsConfig {
+  if (config.mode === 'clone') {
+    return { ...config, dialect: null };
+  }
+  return config;
 }

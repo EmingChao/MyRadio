@@ -3,7 +3,7 @@ import { ref, computed, watch } from 'vue';
 import { reportPlayback, refreshSessionTracks, getCurrentSession, synthesizeTts, getTrackLyrics, continueRadioSession, getSessionTtsItems } from '../api';
 import { resolveDjSpeechBeforeTrack, resolvePostSpeechVolumeSteps, resolveRevealVolume, resolveTtsWaitTimeoutMs, shouldClientSynthesizeSpeech, shouldMarkSpeechAsSpoken, shouldPrepareSpeechBeforeManualPlay, shouldPrefetchSpeechForIndex, shouldStartOverlapFromTtsProgress, shouldStartTrackBeforeFadeIn } from './player-tts-sequence';
 import { resolveTtsOutputGain } from './player-tts-volume';
-import { mergeAppendedTracks, shouldApplyContinuationResult, shouldRequestQueueContinuation } from './player-queue-continuation';
+import { mergeAppendedTracks, shouldApplyContinuationResult, shouldClearLocalSessionAfterRestore, shouldRequestQueueContinuation } from './player-queue-continuation';
 
 export interface RadioTrack {
   trackId: number;
@@ -114,6 +114,7 @@ export const usePlayerStore = defineStore('player', () => {
   let ttsOverlapStarted = false;
   let currentTtsOverlapToken: number | null = null;
   let currentTtsShouldOverlap = false;
+  let ttsBackfillTimer: ReturnType<typeof setTimeout> | null = null;
   // Web Audio 节点延迟初始化，避免页面还没交互就创建上下文。
   let ttsAudioContext: AudioContext | null = null;
   let ttsAnalyser: AnalyserNode | null = null;
@@ -342,6 +343,7 @@ export const usePlayerStore = defineStore('player', () => {
       pendingSpeechText.value = decision.text;
       void ensureTtsReady(decision.text, token, decision.kind);
       void fetchReadyTtsItemsForSession();
+      scheduleSessionTtsBackfill(4, 1800);
       if (pendingSpeechTimer) clearTimeout(pendingSpeechTimer);
       const waitTimeoutMs = resolveTtsWaitTimeoutMs(
         decision.kind,
@@ -490,6 +492,7 @@ export const usePlayerStore = defineStore('player', () => {
     if (nextIndex >= 0 && nextIndex !== currentIndex.value) {
       currentIndex.value = nextIndex;
     }
+    preheatUpcomingPlayback();
   }
 
   /**
@@ -499,6 +502,7 @@ export const usePlayerStore = defineStore('player', () => {
     if (!session.value || newTracks.length === 0) return;
     session.value.tracks = mergeAppendedTracks(session.value.tracks, newTracks);
     preheatUpcomingPlayback();
+    scheduleSessionTtsBackfill();
   }
 
   /**
@@ -624,6 +628,31 @@ export const usePlayerStore = defineStore('player', () => {
   }
 
   /**
+   * 续播 TTS 是后端异步慢速生成的，追加队列后短时间轮询补拉，避免错过 WebSocket 推送。
+   */
+  function scheduleSessionTtsBackfill(rounds = 6, intervalMs = 2500) {
+    if (!session.value || rounds <= 0) return;
+    if (ttsBackfillTimer) {
+      clearTimeout(ttsBackfillTimer);
+      ttsBackfillTimer = null;
+    }
+
+    const sessionId = session.value.sessionId;
+    const generation = ttsConfigGeneration;
+    let left = rounds;
+
+    const tick = () => {
+      if (!session.value || session.value.sessionId !== sessionId || generation !== ttsConfigGeneration) return;
+      void fetchReadyTtsItemsForSession();
+      left--;
+      if (left <= 0) return;
+      ttsBackfillTimer = setTimeout(tick, intervalMs);
+    };
+
+    ttsBackfillTimer = setTimeout(tick, intervalMs);
+  }
+
+  /**
    * 预热后续 1-2 首歌的 DJ 独白和下一首音频，减少主动切歌时的等待感。
    */
   function preheatUpcomingPlayback() {
@@ -687,6 +716,10 @@ export const usePlayerStore = defineStore('player', () => {
       pendingSpeechTimer = null;
     }
     sessionTtsFetches.clear();
+    if (ttsBackfillTimer) {
+      clearTimeout(ttsBackfillTimer);
+      ttsBackfillTimer = null;
+    }
 
     // 不打断当前正在说的 DJ，只让后续独白用新配置预热。
     if (!djSpeaking.value) {
@@ -1137,6 +1170,7 @@ export const usePlayerStore = defineStore('player', () => {
     const track = currentTrack.value;
     const isExplore = track?.sourceScope === 'explore' || track?.source_type === 'NETEASE_EXPLORE';
     return {
+      sessionId: session.value?.sessionId,
       scene: session.value?.sessionTitle || '',
       mood: extractMoodFromSessionTitle(session.value?.sessionTitle),
       title: track?.title,
@@ -1209,6 +1243,8 @@ export const usePlayerStore = defineStore('player', () => {
         void ensureQueueContinuation('near-end');
         void fetchReadyTtsItemsForSession();
         preheatUpcomingPlayback();
+      } else if (res.code === 0 && shouldClearLocalSessionAfterRestore(session.value?.sessionId, res.data)) {
+        clearSession();
       }
     } catch {
       // 静默失败
@@ -1240,6 +1276,10 @@ export const usePlayerStore = defineStore('player', () => {
     pendingSpeechText.value = null;
     spokenSegueKeys.clear();
     sessionTtsFetches.clear();
+    if (ttsBackfillTimer) {
+      clearTimeout(ttsBackfillTimer);
+      ttsBackfillTimer = null;
+    }
     preloadedTrackUrl = null;
     preloadedTrackAudio.pause();
     preloadedTrackAudio.removeAttribute('src');

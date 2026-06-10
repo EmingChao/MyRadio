@@ -3,29 +3,33 @@ import fs from 'fs';
 import path from 'path';
 import db from '../stores/db';
 import { continueRadioSession, createRadioSession } from '../agent/radio';
-import { getSession, getRecentSession, getSessionTracksWithDetail, updateTrackPlayStatus } from '../stores/session';
+import { formatSqliteLocalDateTime, getSession, getRecentSession, getSessionTracksWithDetail, updateTrackPlayStatus } from '../stores/session';
 import { incrementPlayCount, incrementSkipCount } from '../stores/track';
 import { autoUpdateProfile } from '../stores/profile';
-import { buildTtsBatchPlan, synthesizeSpeech, getTextHash, getTtsFilePath, getTtsConfigKey } from '../services/tts';
+import { buildTtsBatchPlan, buildTtsRequestPreview, synthesizeSpeech, getTextHash, getTtsFilePath, getTtsConfigKey } from '../services/tts';
 import { resolveTtsStyle } from '../services/tts-style';
 import { getTtsConfig } from '../stores/tts-config';
 import { wsManager } from '../ws/manager';
 import { getCurrentSceneAndMood } from '../services/daily-plan';
 import { getOrCreateSessionContinuationTask } from '../services/session-continuation-task';
+import { appendRuntimeLog, clearRuntimeLogs, createBufferedRuntimeLogger, readRuntimeLogs } from '../services/runtime-logs';
 import { song_url } from 'NeteaseCloudMusicApi';
 
 const router = Router();
 const USER_ID = 443961717;
 const continuationTasks = new Map<number, Promise<Awaited<ReturnType<typeof continueRadioSession>>>>();
+const SERVICE_STARTED_AT = formatSqliteLocalDateTime(new Date());
 
 /**
  * POST /api/radio/session/create — 创建电台会话
  * Body: { scene?: string, mood?: string, extraPrompt?: string, refreshMode?: string, avoidTrackIds?: number[] }
  */
 router.post('/session/create', async (req, res) => {
+  const runLog = createBufferedRuntimeLogger();
   try {
+    clearRuntimeLogs();
     const { scene, mood, extraPrompt, refreshMode, avoidTrackIds } = req.body;
-    const result = await createRadioSession({ scene, mood, extraPrompt, refreshMode, avoidTrackIds });
+    const result = await createRadioSession({ scene, mood, extraPrompt, refreshMode, avoidTrackIds, runtimeLogger: runLog });
 
     // 先返回响应，不阻塞 TTS 生成
     res.json({ code: 0, data: result });
@@ -33,6 +37,12 @@ router.post('/session/create', async (req, res) => {
     // 异步生成 TTS 音频
     generateTtsForSession(result.sessionId, result.say, result.tracks).catch(err => {
       console.error('[TTS] 后台生成失败:', err.message);
+      appendRuntimeLog(result.sessionId, {
+        scope: 'tts',
+        level: 'error',
+        title: '后台 TTS 任务失败',
+        message: err.message || '未知错误',
+      });
     });
   } catch (err: any) {
     console.error('创建电台失败:', err);
@@ -44,15 +54,23 @@ router.post('/session/create', async (req, res) => {
  * POST /api/radio/session/create-from-plan — 从当前计划时段创建会话
  */
 router.post('/session/create-from-plan', async (req, res) => {
+  const runLog = createBufferedRuntimeLogger();
   try {
+    clearRuntimeLogs();
     const { scene, mood } = getCurrentSceneAndMood();
     console.log(`[Radio] 从计划启动: scene=${scene}, mood=${mood}`);
-    const result = await createRadioSession({ scene, mood });
+    const result = await createRadioSession({ scene, mood, runtimeLogger: runLog });
 
     res.json({ code: 0, data: result });
 
     generateTtsForSession(result.sessionId, result.say, result.tracks).catch(err => {
       console.error('[TTS] 后台生成失败:', err.message);
+      appendRuntimeLog(result.sessionId, {
+        scope: 'tts',
+        level: 'error',
+        title: '后台 TTS 任务失败',
+        message: err.message || '未知错误',
+      });
     });
   } catch (err: any) {
     console.error('从计划创建电台失败:', err);
@@ -75,18 +93,32 @@ router.post('/session/:id/continue', async (req, res) => {
     );
     const appendedTracks = await continuationTask.promise;
 
-    res.json({ code: 0, data: { appendedTracks, shared: !continuationTask.owner } });
-
+    // owner 请求负责启动续播 TTS；先启动后台任务再返回，确保运行日志立刻能看到 TTS 步骤。
     if (continuationTask.owner) {
       generateTtsForSession(sessionId, '', appendedTracks).catch(err => {
         console.error('[TTS] 续播后台生成失败:', err.message);
+        appendRuntimeLog(sessionId, {
+          scope: 'tts',
+          level: 'error',
+          title: '续播 TTS 任务失败',
+          message: err.message || '未知错误',
+        });
       });
 
       wsManager.broadcast(sessionId, {
         type: 'QUEUE_UPDATED',
         data: { sessionId, tracks: appendedTracks, append: true },
       });
+    } else {
+      appendRuntimeLog(sessionId, {
+        scope: 'tts',
+        level: 'info',
+        title: '复用续播任务',
+        message: '当前请求复用已有续播结果，不重复启动 TTS 生成',
+      });
     }
+
+    res.json({ code: 0, data: { appendedTracks, shared: !continuationTask.owner } });
   } catch (err: any) {
     console.error('续播队列失败:', err);
     res.status(500).json({ code: 500, message: err.message || '续播队列失败' });
@@ -168,6 +200,21 @@ async function generateTtsForSession(
   const textsToSynthesize = collectSessionTtsItems(sessionId, say, tracks);
 
   console.log(`[TTS] 开始生成 ${textsToSynthesize.length} 段语音...`);
+  appendRuntimeLog(sessionId, {
+    scope: 'tts',
+    level: 'info',
+    title: '开始生成 DJ 语音',
+    message: `共 ${textsToSynthesize.length} 段，模式=${ttsConfig.mode}${ttsConfig.dialect ? `，方言=${ttsConfig.dialect}` : ''}`,
+  });
+  if (textsToSynthesize.length === 0) {
+    appendRuntimeLog(sessionId, {
+      scope: 'tts',
+      level: 'warn',
+      title: '没有可合成的 DJ 文案',
+      message: '本轮队列没有 voiceIntro 或 segue，歌曲会直接播放',
+    });
+    return;
+  }
 
   // 前几段先生成保证马上能播，后续段落慢速后台续跑，避免一次新会话打爆 TTS 限流。
   const ttsPlan = buildTtsBatchPlan(textsToSynthesize, {
@@ -182,8 +229,35 @@ async function generateTtsForSession(
     try {
       if (planItem.delayBeforeMs > 0) {
         console.log(`[TTS] 后台慢速生成等待 ${planItem.delayBeforeMs}ms: ${planItem.index + 1}/${textsToSynthesize.length}`);
+        appendRuntimeLog(sessionId, {
+          scope: 'tts',
+          level: 'info',
+          title: 'TTS 后台节流等待',
+          message: `第 ${planItem.index + 1}/${textsToSynthesize.length} 段等待 ${planItem.delayBeforeMs}ms 后再生成`,
+          durationMs: planItem.delayBeforeMs,
+        });
         await sleep(planItem.delayBeforeMs);
       }
+      const start = Date.now();
+      let mimoRequestPreview: any = null;
+      try {
+        mimoRequestPreview = buildTtsRequestPreview(item.text, item.style, ttsConfig);
+      } catch (err: any) {
+        mimoRequestPreview = { buildError: err.message || '构建请求预览失败' };
+      }
+      appendRuntimeLog(sessionId, {
+        scope: 'mimo',
+        level: 'info',
+        title: 'Mimo TTS 请求开始',
+        message: `第 ${planItem.index + 1}/${textsToSynthesize.length} 段，文本 ${item.text.length} 字，风格=${item.style.preset}`,
+        detail: {
+          request: {
+            url: 'https://api.xiaomimimo.com/v1/chat/completions',
+            method: 'POST',
+            body: mimoRequestPreview,
+          },
+        },
+      });
       const filePath = await synthesizeSpeech(item.text, item.style, ttsConfig);
       if (filePath) {
         const hash = getTextHash(item.text, item.style, ttsConfig);
@@ -197,12 +271,66 @@ async function generateTtsForSession(
         successCount++;
         broadcastTtsReady(sessionId, readyItem);
         console.log(`[TTS] 已推送第 ${successCount}/${textsToSynthesize.length} 段语音到会话 #${sessionId}`);
+        appendRuntimeLog(sessionId, {
+          scope: 'mimo',
+          level: 'success',
+          title: 'Mimo TTS 响应成功',
+          message: `第 ${planItem.index + 1}/${textsToSynthesize.length} 段已生成并推送到前端`,
+          durationMs: Date.now() - start,
+          meta: { hash },
+          detail: {
+            request: {
+              body: mimoRequestPreview,
+            },
+            response: {
+              ok: true,
+              hash,
+              audioUrl: `/api/tts/audio/${hash}`,
+              cachedFile: path.basename(filePath),
+            },
+          },
+        });
+      } else {
+        appendRuntimeLog(sessionId, {
+          scope: 'mimo',
+          level: 'warn',
+          title: 'Mimo TTS 未生成音频',
+          message: `第 ${planItem.index + 1}/${textsToSynthesize.length} 段返回空结果，播放时会显示文字或走兜底`,
+          durationMs: Date.now() - start,
+          detail: {
+            request: {
+              body: mimoRequestPreview,
+            },
+            response: {
+              ok: false,
+              reason: '未返回可用音频文件',
+            },
+          },
+        });
       }
     } catch (err: any) {
       // 单个失败不影响其他
       console.warn('[TTS] 单段语音生成失败:', err?.message || err);
+      appendRuntimeLog(sessionId, {
+        scope: 'mimo',
+        level: 'error',
+        title: 'Mimo TTS 请求失败',
+        message: `第 ${planItem.index + 1}/${textsToSynthesize.length} 段失败：${err?.message || err}`,
+        detail: {
+          error: {
+            message: err?.message || String(err),
+          },
+        },
+      });
     }
   }
+
+  appendRuntimeLog(sessionId, {
+    scope: 'tts',
+    level: successCount > 0 ? 'success' : 'warn',
+    title: 'DJ 语音生成结束',
+    message: `已完成 ${successCount}/${textsToSynthesize.length} 段`,
+  });
 }
 
 /**
@@ -218,7 +346,8 @@ function sleep(ms: number): Promise<void> {
 router.get('/now', (_req, res) => {
   try {
     const userId = 443961717;
-    const session = getRecentSession(userId);
+    // 服务重启后不自动恢复旧 session；页面刷新仍可恢复本次启动后创建的电台。
+    const session = getRecentSession(userId, { createdAfter: SERVICE_STARTED_AT });
     if (!session) {
       return res.json({ code: 0, data: null });
     }
@@ -328,6 +457,26 @@ router.get('/session/:id/tts', (req, res) => {
     res.json({ code: 0, data: { sessionId, ttsItems: readyItems } });
   } catch (err: any) {
     res.status(500).json({ code: 500, message: err.message || '查询 TTS 失败' });
+  }
+});
+
+/**
+ * GET /api/radio/session/:id/runtime-logs — 查询当前 session 的轻量运行日志。
+ * 前端会传 since=打开面板时刻，只显示本次查看之后发生的步骤。
+ */
+router.get('/session/:id/runtime-logs', (req, res) => {
+  try {
+    const sessionId = Number(req.params.id);
+    const session = getSession(sessionId);
+    if (!session) {
+      return res.status(404).json({ code: 404, message: '会话不存在' });
+    }
+
+    const since = typeof req.query.since === 'string' ? Number(req.query.since) : undefined;
+    const logs = readRuntimeLogs(sessionId, { since, limit: 200 });
+    res.json({ code: 0, data: { sessionId, logs } });
+  } catch (err: any) {
+    res.status(500).json({ code: 500, message: err.message || '查询运行日志失败' });
   }
 });
 

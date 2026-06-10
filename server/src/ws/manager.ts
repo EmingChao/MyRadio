@@ -10,6 +10,7 @@ export type WsEvent =
   | { type: 'DJ_CHAT'; data: { sessionId: number; reply: string; intent: string } }
   | { type: 'PLAYBACK_REPORT'; data: { sessionId: number; trackId: number; action: string } }
   | { type: 'TTS_READY'; data: { sessionId: number; ttsItems: Array<{ text: string; hash: string; audioUrl: string; style?: any }> } }
+  | { type: 'RUN_LOG'; data: { sessionId: number; entry: any } }
   | { type: 'SLOT_CHANGED'; data: { scene: string; mood: string; startTime: string; endTime: string } };
 
 /**
