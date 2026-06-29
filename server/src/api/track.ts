@@ -1,4 +1,6 @@
 import { Router } from 'express';
+import fs from 'fs';
+import path from 'path';
 import {
   queryTracks,
   getTrackById,
@@ -10,6 +12,7 @@ import {
   getTrackStats,
 } from '../stores/track';
 import { getTrackLyrics } from '../services/lyrics';
+import { like as neteaseLike } from 'NeteaseCloudMusicApi';
 
 const router = Router();
 
@@ -91,17 +94,34 @@ router.put('/:id/tags', (req, res) => {
   res.json({ code: 0, message: '标签已更新' });
 });
 
+const COOKIE_FILE = path.resolve(__dirname, '../../data/netease-cookie.txt');
+
 /**
- * PUT /api/track/:id/liked — 更新喜欢状态
+ * PUT /api/track/:id/liked — 更新喜欢状态（本地 + 同步网易云）
  * Body: { liked: 0 | 1 }
  */
-router.put('/:id/liked', (req, res) => {
+router.put('/:id/liked', async (req, res) => {
   const { liked } = req.body;
-  const ok = updateTrackLiked(Number(req.params.id), liked ? 1 : 0);
+  const trackId = Number(req.params.id);
+  const ok = updateTrackLiked(trackId, liked ? 1 : 0);
   if (!ok) {
     res.status(404).json({ code: 404, message: '歌曲不存在' });
     return;
   }
+
+  // 同步网易云红心状态（静默失败，不影响本地操作）
+  try {
+    if (fs.existsSync(COOKIE_FILE)) {
+      const track = getTrackById(trackId);
+      if (track?.source_track_id) {
+        const cookie = fs.readFileSync(COOKIE_FILE, 'utf-8').trim();
+        await neteaseLike({ id: Number(track.source_track_id), like: !!liked, cookie } as any);
+      }
+    }
+  } catch (err: any) {
+    console.warn(`[Track] 同步网易云红心失败 (trackId=${trackId}):`, err.message);
+  }
+
   res.json({ code: 0, message: liked ? '已喜欢' : '已取消喜欢' });
 });
 

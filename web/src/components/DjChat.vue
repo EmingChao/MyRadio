@@ -6,7 +6,6 @@ import { sendChatMessage } from '../api'
 const store = usePlayerStore()
 const chatInput = ref('')
 const sending = ref(false)
-const chatHistory = ref<Array<{ role: string; content: string; type?: string }>>([])
 
 const upcomingTracks = computed(() => {
   if (!store.session) return []
@@ -21,6 +20,7 @@ const currentDjMonologue = computed(() => {
 })
 
 const transcriptRef = ref<HTMLElement | null>(null)
+const feedRef = ref<HTMLElement | null>(null)
 let userScrollTimer: ReturnType<typeof setTimeout> | null = null
 const userReadingTranscript = ref(false)
 const transcriptExpanded = ref(false)
@@ -99,6 +99,14 @@ watch([currentReadCount, currentDjMonologue], async () => {
   })
 })
 
+/** 将消息流滚动到底部，让最新消息可见 */
+function scrollFeedToBottom() {
+  nextTick(() => {
+    const el = feedRef.value
+    if (el) el.scrollTop = el.scrollHeight
+  })
+}
+
 async function handleSend(overrideMessage?: string) {
   const nextMessage = (overrideMessage || chatInput.value).trim()
   if (!nextMessage || !store.session || sending.value) return
@@ -107,32 +115,33 @@ async function handleSend(overrideMessage?: string) {
   if (!overrideMessage) chatInput.value = ''
   sending.value = true
 
-  chatHistory.value.push({ role: 'user', content: message })
+  store.addChatMessage({ role: 'user', content: message })
+  scrollFeedToBottom()
+
+  // 前端超时保护：30 秒无响应自动解锁，避免永久卡死
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), 30_000)
 
   let res: any
   try {
-    res = await sendChatMessage(store.session.sessionId, message, store.currentIndex)
+    res = await sendChatMessage(store.session.sessionId, message, store.currentIndex, controller.signal)
   } catch {
-    chatHistory.value.push({ role: 'dj', content: '网络错误，请稍后再试。' })
+    clearTimeout(timeoutId)
+    store.addChatMessage({ role: 'dj', content: controller.signal.aborted ? '请求超时，请稍后再试。' : '网络错误，请稍后再试。' })
+    scrollFeedToBottom()
     sending.value = false
     return
   }
+  clearTimeout(timeoutId)
 
   try {
     if (res?.code === 0) {
-      const { reply, queueChanged, updatedTracks, queueUpdateMode } = res.data || {}
-      chatHistory.value.push({ role: 'dj', content: reply || '收到，我会调整后面的歌。' })
-      if (queueChanged && Array.isArray(updatedTracks)) {
-        if (queueUpdateMode === 'soft') {
-          store.replaceQueue(updatedTracks)
-        } else {
-          store.updateQueue(updatedTracks)
-          chatHistory.value.push({ role: 'system', content: '队列已更新', type: 'queue-update' })
-        }
-      }
+      const { reply } = res.data || {}
+      store.addChatMessage({ role: 'dj', content: reply || '收到，我会调整后面的歌。' })
     } else {
-      chatHistory.value.push({ role: 'dj', content: '抱歉，处理失败了。' })
+      store.addChatMessage({ role: 'dj', content: '抱歉，处理失败了。' })
     }
+    scrollFeedToBottom()
   } catch (err) {
     console.warn('[Chat] 队列本地更新失败:', err)
   } finally {
@@ -150,7 +159,7 @@ function handleSimilarContinue() {
 <template>
   <div class="dj-feed">
     <!-- 消息流 -->
-    <div class="feed-messages">
+    <div ref="feedRef" class="feed-messages">
       <!-- DJ 转录区：承接开场白和歌曲独白，避免和播放区重复。 -->
       <div
         v-if="currentDjMonologue"
@@ -211,7 +220,7 @@ function handleSimilarContinue() {
       </div>
 
       <!-- 聊天历史 -->
-      <template v-for="(chat, i) in chatHistory" :key="i">
+      <template v-for="(chat, i) in store.chatHistory" :key="i">
         <!-- 用户消息 — 右侧绿色气泡 -->
         <div v-if="chat.role === 'user'" class="msg msg-you">
           <div class="msg-tag">You</div>

@@ -73,6 +73,8 @@ function handleWsEvent(event: WsEvent) {
     } else {
       store.updateQueue(event.data.tracks)
     }
+  } else if (event.type === 'DJ_CHAT' && event.data?.reply) {
+    store.addChatMessage({ role: 'dj', content: event.data.reply })
   } else if (event.type === 'RUN_LOG' && event.data?.entry) {
     runtimeLogs.appendFromWs(Number(event.data.sessionId), event.data.entry)
   }
@@ -516,12 +518,11 @@ function setTheme(value: 'dark' | 'light') {
 
 /* ===== DJ Feed 聊天流 ===== */
 .feed-area {
-  flex: 0 0 198px;
-  height: 198px;
+  flex: 1;
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  justify-content: flex-start;
+  justify-content: flex-end;
   min-height: 0;
   margin-top: -2px;
   padding: 0 12px 8px;

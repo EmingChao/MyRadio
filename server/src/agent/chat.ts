@@ -7,10 +7,11 @@ import { getSession, getSessionTracks, insertSessionTracks } from '../stores/ses
 import { getTrackById } from '../stores/track';
 import { recallCandidates, formatCandidatesForClaude } from './recall';
 import { appendDoNotPlay, appendFavoriteGenres } from '../stores/profile';
-import { buildSoftReorderPlan } from './queue-plan';
+import { buildSoftReorderPlan, resolveChatTransitionCount } from './queue-plan';
 import { recallSimilarSongCandidates } from './netease-sources';
+import { normalizeCloudSearchSongs, upsertExploreTracks } from './explore';
 import { appendRuntimeLog } from '../services/runtime-logs';
-import { song_url } from 'NeteaseCloudMusicApi';
+import { song_url, cloudsearch } from 'NeteaseCloudMusicApi';
 
 interface SimilarContinuationTrackLike {
   title?: string;
@@ -23,6 +24,15 @@ interface SimilarContinuationParams {
   fallbackScored: any[];
   existingTrackIds: Set<number>;
   limit?: number;
+}
+
+interface ChatAckResult {
+  reply: string;
+  intent: string;
+  queueChanged: boolean;
+  queueUpdateMode: 'none' | 'async';
+  insertedTrackIds: number[];
+  asyncQueueUpdate: boolean;
 }
 
 /**
@@ -105,10 +115,20 @@ export async function handleChat(sessionId: number, message: string, currentInde
 
   // 处理音乐方向输入：不硬切当前歌，保留 1-2 首过渡后静默接入新队列。
   if (intent === 'REORDER_QUEUE' || isListeningDirectionMessage(message)) {
-    const requestedTracks = Array.isArray(result.tracks) && result.tracks.length > 0
-      ? result.tracks
-      : buildLocalSoftReorderTracks(message, scored);
-    const reorderResult = await handleReorderQueue(sessionId, currentIndex >= 0 ? currentIndex : 0, requestedTracks, scored);
+    // 当本地候选不足时，从网易云搜索补充
+    let enrichedScored = scored;
+    try {
+      const searchResults = await searchNeteaseForChat(session.userId, message, scored);
+      if (searchResults.length > 0) {
+        enrichedScored = [...scored, ...searchResults];
+      }
+    } catch (err: any) {
+      console.warn('[Chat] 网易云搜索补充失败:', err.message);
+    }
+
+    const requestedTracks = selectChatRequestedTracks(message, result.tracks, enrichedScored);
+    const reorderResult = await handleReorderQueue(sessionId, currentIndex >= 0 ? currentIndex : 0, requestedTracks, enrichedScored);
+    await refreshPlayUrlsForInsertedTracks(sessionId, reorderResult.insertedTrackIds);
     queueChanged = reorderResult.queueChanged;
     queueUpdateMode = reorderResult.queueChanged ? 'soft' : 'none';
     insertedTrackIds = reorderResult.insertedTrackIds;
@@ -126,6 +146,34 @@ export async function handleChat(sessionId: number, message: string, currentInde
     queueUpdateMode,
     insertedTrackIds,
   };
+}
+
+/**
+ * 快速响应聊天请求：先给用户确认，再把真正排歌放到后台执行。
+ */
+export function acknowledgeChatRequest(sessionId: number, message: string): ChatAckResult {
+  return {
+    reply: buildChatAcknowledgement(message),
+    intent: isListeningDirectionMessage(message) || isSimilarContinuationMessage(message) ? 'REORDER_QUEUE' : 'CHAT',
+    queueChanged: false,
+    queueUpdateMode: 'async',
+    insertedTrackIds: [],
+    asyncQueueUpdate: isListeningDirectionMessage(message) || isSimilarContinuationMessage(message),
+  };
+}
+
+/**
+ * 根据用户原话生成即时确认文案，让前端不必等待后台排歌完成。
+ */
+function buildChatAcknowledgement(message: string): string {
+  const cleaned = message
+    .replace(/想听|放点|来点|换成|多放|我想|给我|能不能/g, '')
+    .trim();
+  const target = cleaned.length > 0 ? cleaned.slice(0, 18) : '这个方向';
+  if (/不要|别放|少放/.test(message)) {
+    return `收到，我会把后面的歌避开“${target}”，马上调整队列。`;
+  }
+  return `好，我马上按“${target}”去找合适的歌，排到后面。`;
 }
 
 /**
@@ -441,6 +489,78 @@ function buildLocalSoftReorderTracks(
 }
 
 /**
+ * 选择聊天重排要插入的歌曲。
+ * 当实时搜索补到了用户明确点名的歌手/歌曲时，优先使用命中候选，避免模型沿用旧候选却回复“已排上”。
+ */
+export function selectChatRequestedTracks(
+  message: string,
+  modelTracks: any,
+  scored: any[],
+  minDirectMatches = 3,
+): Array<{ trackId: number; segue?: string; djScript?: string; recommendReason?: string }> {
+  const directMatches = buildDirectRequestTracks(message, scored, minDirectMatches);
+  if (directMatches.length >= minDirectMatches) {
+    return directMatches;
+  }
+
+  if (Array.isArray(modelTracks) && modelTracks.length > 0) {
+    return modelTracks;
+  }
+
+  return buildLocalSoftReorderTracks(message, scored);
+}
+
+/**
+ * 从候选集中找出和用户原话强相关的歌曲，主要覆盖“想听某歌手/某首歌”的即时请求。
+ */
+function buildDirectRequestTracks(
+  message: string,
+  scored: any[],
+  limit: number,
+): Array<{ trackId: number; segue: string; djScript: string; recommendReason: string }> {
+  const normalized = normalizeText(message);
+  const ranked = scored
+    .map(item => {
+      const track = item.track || {};
+      const artist = normalizeText(track.artist || '');
+      const title = normalizeText(track.title || '');
+      const album = normalizeText(track.album || '');
+      const tags = normalizeText([track.genre_tags, track.mood_tags].filter(Boolean).join(' '));
+      const score = (artist && normalized.includes(artist) ? 100 : 0)
+        + (title && normalized.includes(title) ? 120 : 0)
+        + (album && normalized.includes(album) ? 30 : 0)
+        + (tags && tags.split(/\s+/).some(token => token && normalized.includes(token)) ? 20 : 0)
+        + Number(item.score || 0) / 1000;
+      return { item, score };
+    })
+    .filter(entry => entry.score >= 100)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, Math.max(3, limit));
+
+  return ranked.map(({ item }, index) => {
+    const track = item.track;
+    const request = message.length > 24 ? `${message.slice(0, 24)}...` : message;
+    return {
+      trackId: Number(track.id),
+      segue: index === 0
+        ? `好，我会把你刚才点名的方向排进后面，先用《${track.title}》接上。`
+        : `这一首继续回应你刚才说的“${request}”。`,
+      djScript: `《${track.title}》来自 ${track.artist || '这位音乐人'}${track.album ? ` 的《${track.album}》` : ''}，这首会更直接地贴近你刚刚点名的方向。`,
+      recommendReason: `你刚刚说“${request}”，所以我优先把 ${track.artist || '这个方向'} 的歌排进后续队列，而不是只做泛泛的相似调整。`,
+    };
+  });
+}
+
+/**
+ * 归一化文本用于命中判断，去掉大小写和常见分隔符差异。
+ */
+function normalizeText(value: string): string {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[《》「」“”"'’‘,，、。.\s_-]/g, '');
+}
+
+/**
  * 处理队列重排：保留已播放的歌曲，用新歌曲替换后续队列
  */
 async function handleReorderQueue(
@@ -472,7 +592,11 @@ async function handleReorderQueue(
     currentQueue: sessionTracks.map(track => ({ trackId: track.trackId, sortNo: track.sortNo })),
     currentIndex,
     requestedTracks: validTracks,
-    transitionCount: 2,
+    transitionCount: resolveChatTransitionCount({
+      totalTracks: sessionTracks.length,
+      currentIndex,
+      requestedCount: validTracks.length,
+    }),
   });
 
   if (plan.insertTracks.length < 3) {
@@ -522,4 +646,119 @@ function handleSavePreference(userId: number, preference: { preferenceType: stri
     }
     // scene 暂不处理，后续可扩展
   }
+}
+
+/**
+ * 从网易云搜索补充聊天重排候选。
+ * 当用户请求特定歌手/风格时，本地候选可能不包含匹配歌曲，需要实时搜索。
+ */
+async function searchNeteaseForChat(
+  userId: number,
+  message: string,
+  existingScored: any[],
+): Promise<any[]> {
+  const cookieFile = path.resolve(__dirname, '../../data/netease-cookie.txt');
+  if (!fs.existsSync(cookieFile)) return [];
+
+  const existingSourceIds = new Set(
+    existingScored.map(s => String(s.track?.source_track_id || '')).filter(Boolean)
+  );
+
+  // 从用户消息中提取搜索关键词
+  const keywords = extractSearchKeywords(message);
+  if (keywords.length === 0) return [];
+
+  const cookie = fs.readFileSync(cookieFile, 'utf-8').trim();
+  const results: any[] = [];
+  const seen = new Set<string>();
+
+  for (const query of keywords.slice(0, 2)) {
+    try {
+      const res = await cloudsearch({ keywords: query, type: 1, limit: 8, offset: 0, cookie });
+      const rawSongs = (res as any)?.body?.result?.songs || [];
+      const songs = normalizeCloudSearchSongs(rawSongs)
+        .filter(song => !seen.has(song.sourceTrackId) && !existingSourceIds.has(song.sourceTrackId));
+
+      songs.forEach(song => seen.add(song.sourceTrackId));
+
+      if (songs.length > 0) {
+        const stored = upsertExploreTracks({
+          userId,
+          songs,
+          existingSourceIds,
+          reasonHint: `聊天搜索：${query}`,
+        });
+        results.push(...stored.map(candidate => ({
+          ...candidate,
+          track: candidate.track,
+          score: 80,
+          reason: `用户请求搜索：${query}`,
+        })));
+      }
+    } catch (err: any) {
+      console.warn(`[Chat] 网易云搜索失败 query=${query}:`, err.message);
+    }
+  }
+
+  if (results.length > 0) {
+    appendRuntimeLog(0, {
+      scope: 'netease',
+      level: 'info',
+      title: '聊天搜索补充候选',
+      message: `关键词: ${keywords.join('、')}，找到 ${results.length} 首新候选`,
+    });
+  }
+
+  return results;
+}
+
+/**
+ * 从用户聊天消息中提取搜索关键词。
+ * 提取歌手名、风格关键词等用于网易云搜索。
+ */
+function extractSearchKeywords(message: string): string[] {
+  const keywords: string[] = [];
+  const normalized = message.trim();
+
+  // 常见歌手名（直接从消息中匹配知名歌手）
+  const artistPattern = /周杰伦|陈奕迅|林俊杰|王菲|薛之谦|毛不易|邓紫棋|李荣浩|华晨宇|张学友|刘德华|五月天|Taylor Swift|Ed Sheeran|Adele|Bruno Mars|The Weeknd|Billie Eilish/i;
+  const artistMatch = normalized.match(artistPattern);
+  if (artistMatch) {
+    keywords.push(artistMatch[0]);
+  }
+
+  // 风格关键词映射
+  const styleMap: Record<string, string> = {
+    '爵士': 'jazz', 'jazz': 'jazz',
+    '摇滚': '摇滚', 'rock': 'rock',
+    '说唱': '说唱', 'rap': 'rap', 'hiphop': 'hip hop', 'hip-hop': 'hip hop',
+    '民谣': '民谣', 'folk': 'folk',
+    '电子': '电子', 'electronic': 'electronic', 'edm': 'EDM',
+    'R&B': 'R&B', 'r&b': 'R&B', 'rnb': 'R&B',
+    '古典': '古典', 'classical': 'classical',
+    '轻音乐': '轻音乐', '纯音乐': '纯音乐',
+    'lofi': 'lofi', 'lo-fi': 'lofi',
+    'chill': 'chill', '放松': 'chill relaxing',
+    '安静': '安静 轻柔', '温柔': '温柔 轻柔',
+    '开心': '开心 欢快', '快乐': '快乐 欢快',
+    '伤感': '伤感 抒情', '抒情': '抒情',
+    '深夜': '深夜 安静', '睡前': '睡前 安静',
+  };
+
+  for (const [key, value] of Object.entries(styleMap)) {
+    if (normalized.toLowerCase().includes(key.toLowerCase())) {
+      keywords.push(value);
+      break;
+    }
+  }
+
+  // 如果没有匹配到特定关键词，用消息原文的前 20 字作为搜索词
+  if (keywords.length === 0 && normalized.length >= 2) {
+    const cleaned = normalized.replace(/想听|放点|来点|换成|多放|少放|我想|给我|能不能/g, '').trim();
+    if (cleaned.length >= 2) {
+      keywords.push(cleaned.slice(0, 20));
+    }
+  }
+
+  return [...new Set(keywords)];
 }

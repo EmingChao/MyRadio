@@ -27,6 +27,28 @@ interface SoftReorderPlan {
   insertTracks: SoftReorderInsertTrack[];
 }
 
+interface ChatTransitionCountParams {
+  totalTracks: number;
+  currentIndex: number;
+  requestedCount: number;
+}
+
+/**
+ * 解析聊天插队的过渡窗口。
+ * 队列较短时保留自然过渡；队列已经很长或用户当前位置后面堆了很多歌时，让点名内容更快出现。
+ */
+export function resolveChatTransitionCount(params: ChatTransitionCountParams): number {
+  const safeTotal = Math.max(0, params.totalTracks);
+  const safeIndex = Math.max(0, Math.min(params.currentIndex, Math.max(0, safeTotal - 1)));
+  const remainingAfterCurrent = Math.max(0, safeTotal - safeIndex - 1);
+  const requestedCount = Math.max(0, params.requestedCount);
+
+  if (requestedCount === 0 || remainingAfterCurrent <= 0) return 0;
+  if (safeIndex >= 8) return 0;
+  if (safeTotal >= 12 || remainingAfterCurrent >= 5) return 1;
+  return 2;
+}
+
 /**
  * 生成聊天输入触发的软重排计划：保留当前播放和 1-2 首过渡歌，再接入新偏好队列。
  */

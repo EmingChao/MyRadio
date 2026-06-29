@@ -2,7 +2,7 @@ import { Router } from 'express';
 import fs from 'fs';
 import path from 'path';
 import db from '../stores/db';
-import { login_qr_key, login_qr_create, login_qr_check, login_status, song_url } from 'NeteaseCloudMusicApi';
+import { login_qr_key, login_qr_create, login_qr_check, login_status, song_url, like as neteaseLike, likelist as neteaseLikelist } from 'NeteaseCloudMusicApi';
 
 const router = Router();
 const COOKIE_FILE = path.resolve(__dirname, '../../data/netease-cookie.txt');
@@ -117,6 +117,46 @@ router.get('/qr/check', async (req, res) => {
   } catch (err: any) {
     console.error('检查扫码状态失败:', err);
     res.status(500).json({ code: 500, message: err.message || '检查状态失败' });
+  }
+});
+
+/**
+ * POST /api/netease/like — 红心/取消红心歌曲（同步网易云）
+ * Body: { id: number, like: boolean }
+ */
+router.post('/like', async (req, res) => {
+  try {
+    if (!fs.existsSync(COOKIE_FILE)) {
+      return res.status(400).json({ code: 400, message: '未登录，请先扫码登录' });
+    }
+    const { id, like: isLike } = req.body;
+    if (!id) {
+      return res.status(400).json({ code: 400, message: '缺少歌曲 ID' });
+    }
+    const cookie = fs.readFileSync(COOKIE_FILE, 'utf-8').trim();
+    await neteaseLike({ id: Number(id), like: !!isLike, cookie } as any);
+    res.json({ code: 0, message: isLike ? '已红心' : '已取消红心' });
+  } catch (err: any) {
+    console.error('[Netease] 红心操作失败:', err.message);
+    res.status(500).json({ code: 500, message: err.message || '红心操作失败' });
+  }
+});
+
+/**
+ * GET /api/netease/likelist — 获取网易云红心歌曲列表
+ */
+router.get('/likelist', async (_req, res) => {
+  try {
+    if (!fs.existsSync(COOKIE_FILE)) {
+      return res.status(400).json({ code: 400, message: '未登录，请先扫码登录' });
+    }
+    const cookie = fs.readFileSync(COOKIE_FILE, 'utf-8').trim();
+    const result = await neteaseLikelist({ cookie } as any);
+    const body = bodyOf<{ ids?: number[] }>(result);
+    res.json({ code: 0, data: { ids: body.ids || [] } });
+  } catch (err: any) {
+    console.error('[Netease] 获取红心列表失败:', err.message);
+    res.status(500).json({ code: 500, message: err.message || '获取红心列表失败' });
   }
 });
 

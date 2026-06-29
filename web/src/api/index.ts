@@ -79,10 +79,11 @@ export async function getPlaylists() {
 }
 
 /** 发送聊天消息 */
-export async function sendChatMessage(sessionId: number, message: string, currentIndex?: number) {
+export async function sendChatMessage(sessionId: number, message: string, currentIndex?: number, signal?: AbortSignal) {
   return request('/radio/session/chat', {
     method: 'POST',
     body: JSON.stringify({ sessionId, message, currentIndex }),
+    signal,
   });
 }
 
@@ -157,6 +158,27 @@ export async function checkNeteaseQr(key: string) {
 /** 触发获取播放地址 */
 export async function fetchNeteaseUrls() {
   return request('/netease/fetch-urls', { method: 'POST' });
+}
+
+/** 网易云红心/取消红心 */
+export async function neteaseLike(sourceTrackId: number, isLike: boolean) {
+  return request('/netease/like', {
+    method: 'POST',
+    body: JSON.stringify({ id: sourceTrackId, like: isLike }),
+  });
+}
+
+/** 获取网易云红心歌曲列表 */
+export async function getNeteaseLikelist() {
+  return request('/netease/likelist');
+}
+
+/** 更新本地歌曲红心状态（自动同步网易云） */
+export async function toggleTrackLiked(trackId: number, liked: number) {
+  return request(`/track/${trackId}/liked`, {
+    method: 'PUT',
+    body: JSON.stringify({ liked }),
+  });
 }
 
 /** 获取完整品味画像 */

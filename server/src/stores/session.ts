@@ -88,6 +88,8 @@ export function getSessionTracksWithDetail(sessionId: number) {
       st.dj_script AS djScript,
       st.recommend_reason AS recommendReason,
       st.segue,
+      t.liked,
+      t.source_track_id AS sourceTrackId,
       TRIM(
         COALESCE(st.segue, '') || ' ' ||
         COALESCE(st.dj_script, '') || ' ' ||

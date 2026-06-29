@@ -25,6 +25,7 @@ interface FallbackTrackCopyOptions {
   previousTrack?: TrackLike | null;
   sourceScope?: string;
   weather?: string;
+  isContinuation?: boolean;
 }
 
 type VoiceIntroDepth = 'spotlight' | 'standard' | 'bridge';
@@ -76,11 +77,17 @@ export function buildFallbackTrackCopy(track: TrackLike, options: FallbackTrackC
     ])
     : '';
   const introPrefix = options.index === 0
-    ? pickByTrack(track, [
-      '第一首先从一个清楚的拍点开始，让手上的事情有个容易进入的速度。',
-      '开场不急着拔高，我先放一首轮廓分明的歌，把注意力慢慢带回来。',
-      '我们从一首不太用力、但辨识度很清楚的歌开始，让这组电台先站稳。',
-    ])
+    ? options.isContinuation
+      ? pickByTrack(track, [
+        `接下来自然地接上，先让《${track.title}》的拍点把节奏延续下去。`,
+        `下面这首不急着换风格，我选了《${track.title}》，让听感平稳过渡。`,
+        `继续往前走，《${track.title}》的声音线条刚好能接住前面留下的氛围。`,
+      ])
+      : pickByTrack(track, [
+        '第一首先从一个清楚的拍点开始，让手上的事情有个容易进入的速度。',
+        '开场不急着拔高，我先放一首轮廓分明的歌，把注意力慢慢带回来。',
+        '我们从一首不太用力、但辨识度很清楚的歌开始，让这组电台先站稳。',
+      ])
     : buildTransitionPrefix(options.previousTrack, track);
 
   const segue = polishDjCopyText(`${introPrefix}${sourceHint.segue}${pickByTrack(track, [

@@ -52,12 +52,15 @@ export interface PostSpeechVolumeStep {
 }
 
 /**
- * DJ 独白结束后的歌曲音量恢复曲线：先承接，再慢慢回到全音量。
+ * DJ 独白结束后的歌曲音量恢复曲线：承接最后 3 秒叠入音量，逐级恢复到全音量。
  */
 export function resolvePostSpeechVolumeSteps(): PostSpeechVolumeStep[] {
   return [
-    { volume: 0.52, durationMs: 850 },
-    { volume: 1.0, durationMs: 2800 },
+    { volume: 0.3, durationMs: 700 },
+    { volume: 0.45, durationMs: 900 },
+    { volume: 0.62, durationMs: 1100 },
+    { volume: 0.8, durationMs: 1300 },
+    { volume: 1.0, durationMs: 1800 },
   ]
 }
 

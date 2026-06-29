@@ -4,9 +4,9 @@
  */
 export function resolveTtsOutputGain(sessionTitle?: string): number {
   const title = sessionTitle || '';
-  if (title.includes('深夜')) return 1.2;
-  if (title.includes('BGM')) return 1.18;
-  if (title.includes('专注')) return 1.26;
-  if (title.includes('放松')) return 1.22;
-  return 1.24;
+  if (title.includes('深夜')) return 1.3;
+  if (title.includes('BGM')) return 1.28;
+  if (title.includes('专注')) return 1.38;
+  if (title.includes('放松')) return 1.34;
+  return 1.35;
 }

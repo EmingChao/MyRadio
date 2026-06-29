@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia';
 import { ref, computed, watch } from 'vue';
-import { reportPlayback, refreshSessionTracks, getCurrentSession, synthesizeTts, getTrackLyrics, continueRadioSession, getSessionTtsItems } from '../api';
+import { reportPlayback, refreshSessionTracks, getCurrentSession, synthesizeTts, getTrackLyrics, continueRadioSession, getSessionTtsItems, toggleTrackLiked } from '../api';
 import { resolveDjSpeechBeforeTrack, resolvePostSpeechVolumeSteps, resolveRevealVolume, resolveTtsWaitTimeoutMs, shouldClientSynthesizeSpeech, shouldMarkSpeechAsSpoken, shouldPrepareSpeechBeforeManualPlay, shouldPrefetchSpeechForIndex, shouldStartOverlapFromTtsProgress, shouldStartTrackBeforeFadeIn } from './player-tts-sequence';
 import { resolveTtsOutputGain } from './player-tts-volume';
 import { mergeAppendedTracks, shouldApplyContinuationResult, shouldClearLocalSessionAfterRestore, shouldRequestQueueContinuation } from './player-queue-continuation';
@@ -14,11 +14,13 @@ export interface RadioTrack {
   playUrl: string | null;
   sourceScope?: string;
   source_type?: string;
+  sourceTrackId?: string;
   lyrics?: string;
   djScript: string;
   recommendReason: string;
   segue: string;
   voiceIntro?: string;
+  liked?: number;
 }
 
 export interface RadioSession {
@@ -130,6 +132,9 @@ export const usePlayerStore = defineStore('player', () => {
 
   // 时段切换通知
   const slotChanged = ref<SlotInfo | null>(null);
+
+  // DJ 聊天记录（随会话持久化，不因组件销毁丢失）
+  const chatHistory = ref<Array<{ role: string; content: string; type?: string }>>([]);
 
   // 播放进度（秒）
   const currentTime = ref(0);
@@ -438,6 +443,27 @@ export const usePlayerStore = defineStore('player', () => {
     if (index >= 0 && index < trackCount.value && index !== currentIndex.value) {
       reportSkip();
       currentIndex.value = index;
+    }
+  }
+
+  /**
+   * 切换歌曲红心状态（乐观更新，后端同步网易云）
+   */
+  async function toggleLike(trackIndex: number) {
+    if (!session.value) return;
+    const track = session.value.tracks[trackIndex];
+    if (!track) return;
+
+    const newLiked = track.liked ? 0 : 1;
+    // 乐观更新 UI
+    track.liked = newLiked;
+
+    try {
+      await toggleTrackLiked(track.trackId, newLiked);
+    } catch (err) {
+      // 失败回滚
+      console.warn('[Like] 红心操作失败，回滚:', err);
+      track.liked = newLiked ? 0 : 1;
     }
   }
 
@@ -1256,6 +1282,15 @@ export const usePlayerStore = defineStore('player', () => {
     slotChanged.value = info;
   }
 
+  /**
+   * 追加 DJ 聊天消息；连续重复内容直接忽略，避免 HTTP 回包和 WebSocket 推送重复展示。
+   */
+  function addChatMessage(message: { role: string; content: string; type?: string }) {
+    const last = chatHistory.value[chatHistory.value.length - 1];
+    if (last?.role === message.role && last?.content === message.content && last?.type === message.type) return;
+    chatHistory.value.push(message);
+  }
+
   // 清除时段切换通知
   function clearSlotChanged() {
     slotChanged.value = null;
@@ -1275,6 +1310,7 @@ export const usePlayerStore = defineStore('player', () => {
     openingPending.value = false;
     pendingSpeechText.value = null;
     spokenSegueKeys.clear();
+    chatHistory.value = [];
     sessionTtsFetches.clear();
     if (ttsBackfillTimer) {
       clearTimeout(ttsBackfillTimer);
@@ -1307,10 +1343,13 @@ export const usePlayerStore = defineStore('player', () => {
     ttsMap,
     ttsStyleMap,
     slotChanged,
+    chatHistory,
+    addChatMessage,
     setSession,
     next,
     prev,
     goTo,
+    toggleLike,
     togglePlay,
     seek,
     setVolume,

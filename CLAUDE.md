@@ -54,13 +54,14 @@ TTS 支持两种模式，通过 `radio_tts_config` 表配置，前端 `TtsConfig
   - `radio.ts` — 电台会话创建，召回→Claude重排→校验→保存的完整流程
   - `recall.ts` — 候选歌曲召回算法（场景/心情/历史多维打分）
   - `explore.ts` — 探索性推荐（主动发现新歌）
+  - `netease-sources.ts` — 网易云歌单/排行榜等外部数据源召回
   - `claude.ts` — Claude API 调用封装（含重试 + JSON 解析）
   - `chat.ts` — DJ 聊天意图识别
   - `dj-copy.ts` — DJ 串场词模板和 fallback 逻辑
   - `prompts.ts` — System Prompt 定义
   - `context.ts` / `queue-plan.ts` — 用户上下文和队列规划
 - **api/** — REST 路由（radio, track, chat, tts, tts-config, netease, taste, device, weather, daily-plan）
-- **services/** — TTS 合成（`tts.ts` 含克隆/预设双模型分流 + 缓存）、TTS 风格（`tts-style.ts`）、天气查询、每日计划、歌词获取、设备适配
+- **services/** — TTS 合成（`tts.ts` 含克隆/预设双模型分流 + 缓存）、TTS 风格（`tts-style.ts`）、歌曲事实查询（`track-facts.ts`）、会话续播任务（`session-continuation-task.ts`）、运行日志（`runtime-logs.ts`）、天气查询、每日计划、歌词获取、设备适配
 - **stores/** — SQLite 数据层（`db.ts` 单例 + WAL 模式），`tts-config.ts` 管理 TTS 配置 CRUD，`init-db.ts` 含迁移逻辑
 - **ws/manager.ts** — WebSocket 连接管理，按 sessionId 订阅推送
 - **scripts/** — 数据导入和网易云登录等运维脚本

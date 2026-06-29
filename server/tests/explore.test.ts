@@ -46,6 +46,20 @@ assert.equal(songs[0].artist, 'Radiohead');
 assert.equal(songs[0].releaseYear, 2000);
 assert.equal(songs[0].album, 'Kid A');
 
+const collaborationSongs = normalizeCloudSearchSongs([
+  {
+    id: 103,
+    name: '合作歌曲',
+    artists: [{ name: '歌手甲' }, { name: '歌手乙' }],
+    album: { name: '合作专辑', picUrl: 'https://example.com/collab.jpg' },
+    publishTime: 1700000000000,
+  },
+]);
+
+assert.equal(collaborationSongs[0].artist, '歌手甲, 歌手乙', 'artists 结构里的合作艺人需要完整展示');
+assert.equal(collaborationSongs[0].album, '合作专辑', 'album 结构里的专辑名需要被兼容');
+assert.equal(collaborationSongs[0].coverUrl, 'https://example.com/collab.jpg', 'album 结构里的封面需要被兼容');
+
 const stored = upsertExploreTracks({
   userId: 7,
   songs,

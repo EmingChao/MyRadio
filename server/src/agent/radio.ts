@@ -343,7 +343,8 @@ export async function continueRadioSession(sessionId: number, limit = 8): Promis
     trackCountRange: { min: 5, max: continuationMax },
     copyMode: 'selection',
   })
-    + `\n\n这是当前 session 的异步续播请求，只返回 5-${continuationMax} 首即可。AI 仍需要负责选歌和排序，但不要生成过长队列。第一首必须自然承接上一首：${lastExistingTrack ? `${lastExistingTrack.title} - ${lastExistingTrack.artist}` : '当前队列末尾歌曲'}。不要重复已在当前 session 出现过的歌曲。`;
+    + `\n\n这是当前 session 的异步续播请求，只返回 5-${continuationMax} 首即可。AI 仍需要负责选歌和排序，但不要生成过长队列。第一首必须自然承接上一首：${lastExistingTrack ? `${lastExistingTrack.title} - ${lastExistingTrack.artist}` : '当前队列末尾歌曲'}。不要重复已在当前 session 出现过的歌曲。`
+    + `\n\n重要：这些歌曲是续播追加，用户已经在听电台了。DJ 文案（segue、djScript、recommendReason、voiceIntro）中绝对不能出现"第一首"、"这是第一首歌"、"首先"、"开场"等暗示电台刚开始的词语。要用"接下来"、"下面这首"、"继续"等承接性措辞，像电台已经在播放中一样自然过渡。`;
 
   let result: any;
   let isFallback = false;
@@ -648,6 +649,7 @@ function buildFallbackContinuationResult(scored: any[], session: any, userContex
           previousTrack: previous,
           sourceScope: s.sourceScope,
           weather: userContext?.weather,
+          isContinuation: true,
         }),
       };
     }),

@@ -117,9 +117,8 @@ export function buildExploreQueries(ctx: ExploreContext): string[] {
 export function normalizeCloudSearchSongs(rawSongs: any[]): ExploreSong[] {
   return rawSongs
     .map(song => {
-      const artists = Array.isArray(song.ar)
-        ? song.ar.map((a: any) => a?.name).filter(Boolean).join(', ')
-        : '';
+      const artists = normalizeArtistNames(song);
+      const album = song.al || song.album || {};
       const releaseYear = song.publishTime && song.publishTime > 0
         ? new Date(song.publishTime).getFullYear()
         : null;
@@ -128,12 +127,28 @@ export function normalizeCloudSearchSongs(rawSongs: any[]): ExploreSong[] {
         sourceTrackId: String(song.id || ''),
         title: song.name || '',
         artist: artists || '未知艺人',
-        album: song.al?.name || null,
+        album: album.name || null,
         releaseYear,
-        coverUrl: song.al?.picUrl || null,
+        coverUrl: album.picUrl || album.img1v1Url || album.blurPicUrl || null,
       };
     })
     .filter(song => song.sourceTrackId && song.title);
+}
+
+/**
+ * 兼容不同网易云接口的艺人字段，保留合作歌曲的完整艺人列表。
+ */
+function normalizeArtistNames(song: any): string {
+  const artistCandidates = [song.ar, song.artists];
+  for (const artists of artistCandidates) {
+    if (!Array.isArray(artists)) continue;
+    const names = artists.map((artist: any) => artist?.name).filter(Boolean);
+    if (names.length > 0) return names.join(', ');
+  }
+
+  if (typeof song.artist === 'string') return song.artist;
+  if (song.artist?.name) return song.artist.name;
+  return '';
 }
 
 /**
