@@ -42,22 +42,23 @@ const WEATHER_CODES: Record<number, string> = {
   99: '强雷暴伴冰雹',
 };
 
-// 缓存（10 分钟内不重复请求）
-let cachedWeather: WeatherData | null = null;
-let cacheTime = 0;
+// 缓存：按坐标 key 区分，避免不同位置的天气互相覆盖
+const weatherCache = new Map<string, { data: WeatherData; time: number }>();
 const CACHE_TTL = 10 * 60 * 1000; // 10 分钟
 
 /**
  * 获取当前天气
  */
 export async function getWeather(latitude?: number, longitude?: number): Promise<WeatherData> {
-  // 检查缓存
-  if (cachedWeather && Date.now() - cacheTime < CACHE_TTL) {
-    return cachedWeather;
-  }
-
   const lat = latitude ?? Number(process.env.LATITUDE) ?? 31.23;
   const lon = longitude ?? Number(process.env.LONGITUDE) ?? 121.47;
+  const cacheKey = `${lat},${lon}`;
+
+  // 检查缓存
+  const cached = weatherCache.get(cacheKey);
+  if (cached && Date.now() - cached.time < CACHE_TTL) {
+    return cached.data;
+  }
 
   const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,precipitation,weather_code&timezone=Asia/Shanghai`;
 
@@ -70,15 +71,15 @@ export async function getWeather(latitude?: number, longitude?: number): Promise
     const data = await response.json() as OpenMeteoResponse;
     const current = data.current;
 
-    cachedWeather = {
+    const result: WeatherData = {
       temperature: Math.round(current.temperature_2m * 10) / 10,
       weatherCode: current.weather_code,
       description: WEATHER_CODES[current.weather_code] || '未知',
       precipitation: current.precipitation || 0,
     };
-    cacheTime = Date.now();
+    weatherCache.set(cacheKey, { data: result, time: Date.now() });
 
-    return cachedWeather;
+    return result;
   } catch (err: any) {
     console.error('[Weather] 获取天气失败:', err.message);
     // 返回默认值
@@ -94,8 +95,8 @@ export async function getWeather(latitude?: number, longitude?: number): Promise
 /**
  * 格式化天气为上下文字符串
  */
-export async function getWeatherSummary(): Promise<string> {
-  const weather = await getWeather();
+export async function getWeatherSummary(latitude?: number, longitude?: number): Promise<string> {
+  const weather = await getWeather(latitude, longitude);
   let summary = `${weather.description}，${weather.temperature}°C`;
   if (weather.precipitation > 0) {
     summary += `，降水${weather.precipitation}mm`;
